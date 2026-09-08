@@ -30,9 +30,11 @@ export const className = `
   line-height: 1.3;
   letter-spacing: -0.01em;
 
-  /* Widget material: translucent + blurred, like WidgetKit's system material */
+  /* Widget material: translucent + blurred, like WidgetKit's system material.
+     Opacity 0.81 = half the transparency of the original 0.62 (0.38 -> 0.19),
+     so the wallpaper still tints it but text stays legible over busy images. */
   color: rgba(255, 255, 255, 0.92);
-  background: rgba(28, 28, 30, 0.62);
+  background: rgba(28, 28, 30, 0.81);
   -webkit-backdrop-filter: blur(50px) saturate(180%);
   backdrop-filter: blur(50px) saturate(180%);
 
@@ -49,7 +51,7 @@ export const className = `
 
   @media (prefers-color-scheme: light) {
     color: rgba(0, 0, 0, 0.88);
-    background: rgba(255, 255, 255, 0.66);
+    background: rgba(255, 255, 255, 0.83);
     box-shadow:
       inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
       0 1px 1px rgba(0, 0, 0, 0.06),
