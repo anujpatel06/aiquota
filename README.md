@@ -176,6 +176,15 @@ set -g status-right '#(aiquota --compact)'
 `--json` gives you `{generated_at, services: [{name, service, plan, tier,
 windows: [{label, used_pct, resets_at}], extra}]}`.
 
+## Desktop widgets
+
+Keep it on screen instead of typing a command:
+
+- **Menu bar** (SwiftBar/xbar) — `AI 46%` at the top of the screen, over every app
+- **Desktop** (Übersicht) — a panel drawn on the wallpaper
+
+Both live in [`widgets/`](widgets/) with install steps.
+
 ## Development
 
 ```bash
