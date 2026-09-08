@@ -506,6 +506,114 @@ class TestCatalog(Base):
             self.assertIsNone(v.get("credits_total"))
 
 
+class TestApiKeyAdapters(Base):
+    """ElevenLabs/OpenRouter use official APIs — a key is the whole login."""
+
+    def test_unconfigured_without_key(self):
+        for name in ("elevenlabs", "openrouter"):
+            self.run_cli("add", name)
+            code, out, _ = self.run_cli("status", name, "--json")
+            self.assertEqual(code, 0)
+            s = json.loads(out)["services"][0]
+            self.assertEqual(s["tier"], "unconfigured")
+            self.assertIn("API key", s.get("note", "") + (s.get("error") or ""))
+
+    def test_adapters_expose_api_key_metadata(self):
+        """The picker keys off api_key_label to show the paste-a-key flow."""
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        reg = registry()
+        for name in ("elevenlabs", "openrouter"):
+            ad = reg[name]
+            self.assertTrue(getattr(ad, "api_key_label", None))
+            self.assertTrue(getattr(ad, "api_key_help", None))
+
+    def test_elevenlabs_parses_documented_shape(self):
+        from aiquota.adapters import elevenlabs as el
+        payload = {"tier": "starter", "character_count": 2500,
+                   "character_limit": 10000, "status": "active",
+                   "next_character_count_reset_unix": 1790000000}
+        orig = el.get_json
+        el.get_json = lambda *a, **k: (200, payload)
+        try:
+            r = el.ElevenLabsAdapter().probe({"api_key": "x"})
+        finally:
+            el.get_json = orig
+        self.assertEqual(r.tier, "live")
+        self.assertAlmostEqual(r.windows[0].used_pct, 25.0, places=1)
+        self.assertEqual(r.extra["remaining"], 7500)
+
+    def test_openrouter_no_limit_does_not_fake_a_percentage(self):
+        """limit=null means no cap — inventing a denominator would be a lie."""
+        from aiquota.adapters import openrouter as orr
+        payload = {"data": {"usage": 12.5, "limit": None,
+                            "limit_remaining": None, "label": "k"}}
+        orig = orr.get_json
+        orr.get_json = lambda *a, **k: (200, payload)
+        try:
+            r = orr.OpenRouterAdapter().probe({"api_key": "x"})
+        finally:
+            orr.get_json = orig
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows, [], "must not invent a percentage")
+        self.assertIn("12.5", r.extra["spent"])
+
+    def test_bad_key_reports_clearly(self):
+        from aiquota.adapters import elevenlabs as el
+        orig = el.get_json
+        el.get_json = lambda *a, **k: (401, None)
+        try:
+            r = el.ElevenLabsAdapter().probe({"api_key": "bad"})
+        finally:
+            el.get_json = orig
+        self.assertEqual(r.tier, "error")
+        self.assertIn("invalid", r.error.lower())
+
+
+class TestPickerForm(Base):
+    def test_ask_form_maps_fields_and_skips_blanks(self):
+        from aiquota import picker
+        orig = picker.ask
+        picker.ask = lambda *a, **k: "Pro, 500, , 2026-10-01"
+        try:
+            vals = picker.ask_form("t", "p", [
+                ("plan", "plan"), ("credits", "remaining"),
+                ("credits_total", "total"), ("renews_on", "renews")])
+        finally:
+            picker.ask = orig
+        self.assertEqual(vals["plan"], "Pro")
+        self.assertEqual(vals["credits"], "500")
+        self.assertNotIn("credits_total", vals, "blank must be skipped")
+        self.assertEqual(vals["renews_on"], "2026-10-01")
+
+    def test_cancel_returns_none(self):
+        from aiquota import picker
+        orig = picker.ask
+        picker.ask = lambda *a, **k: None
+        try:
+            self.assertIsNone(picker.ask_form("t", "p", [("a", "a")]))
+        finally:
+            picker.ask = orig
+
+    def test_dialog_error_is_not_treated_as_cancel(self):
+        """A permissions failure must never look like the user clicking Cancel."""
+        from aiquota import picker
+        import subprocess as sp
+
+        class FakeProc:
+            returncode = 1
+            stdout = ""
+            stderr = "execution error: Not authorized to send Apple events (-1743)"
+
+        orig = sp.run
+        sp.run = lambda *a, **k: FakeProc()
+        try:
+            with self.assertRaises(picker.DialogError):
+                picker.osa('display dialog "x"')
+        finally:
+            sp.run = orig
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

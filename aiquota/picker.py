@@ -72,16 +72,38 @@ def choose(prompt: str, items, title=TITLE, default=None):
     return out
 
 
-def ask(prompt: str, default="", title=TITLE):
+def ask(prompt: str, default="", title=TITLE, hidden=False):
+    hid = " with hidden answer" if hidden else ""
     ok, out = osa(
         f'display dialog "{q(prompt)}" default answer "{q(default)}" '
         f'with title "{q(title)}" buttons {{"Cancel", "OK"}} '
-        f'default button "OK"')
+        f'default button "OK"{hid}')
     if not ok:
         return None
     # "button returned:OK, text returned:foo"
     marker = "text returned:"
     return out.split(marker, 1)[1].strip() if marker in out else ""
+
+
+def ask_form(title, prompt, fields):
+    """Collect several values in ONE dialog instead of a prompt chain.
+
+    `fields` is a list of (key, label). The user types comma-separated values
+    on a single line — four modal dialogs in a row is a terrible experience,
+    and the earlier version of this tool did exactly that.
+    Returns {key: value} with blanks omitted, or None if cancelled.
+    """
+    labels = ", ".join(label for _, label in fields)
+    raw = ask(f"{prompt}\n\nEnter, separated by commas:\n{labels}\n"
+              "(leave any part blank to skip)", "", title)
+    if raw is None:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    out = {}
+    for i, (key, _label) in enumerate(fields):
+        if i < len(parts) and parts[i]:
+            out[key] = parts[i]
+    return out
 
 
 def confirm(msg: str, ok_label="OK", title=TITLE):
@@ -188,46 +210,79 @@ def _main():
         notify(f"Linked {e['name']}")
         return 0
 
+    # --- API-key platforms: one paste, then live forever ---------------
+    ad = reg.get(e["adapter"])
+    if ad is not None and getattr(ad, "api_key_label", None):
+        return finish_api_key(cfg, key, e, ad)
+
     # --- manual platforms: the user supplies the numbers ---------------
     entry = {"adapter": "manual", "enabled": True, "service": e["name"]}
     return finish_manual(cfg, key, entry, e)
 
 
+def finish_api_key(cfg, key, e, ad):
+    """Ask once for an API key, verify it, then usage is fetched live."""
+    name = e["name"]
+    paste = ask(f"{name} — paste your API key\n\n"
+                f"Get one here:\n{ad.api_key_help}\n\n"
+                "It is stored locally in your config (chmod 600).",
+                "", TITLE, hidden=True)
+    if paste is None:
+        return 0
+    paste = paste.strip()
+    if not paste:
+        confirm(f"No key entered — {name} was not added.", ok_label="OK")
+        return 0
+
+    # Verify before saving, so a bad key fails here and not silently later.
+    probe = ad.probe({"api_key": paste})
+    if probe.tier != "live":
+        confirm(f"That key didn't work.\n\n{probe.error or 'unknown error'}\n\n"
+                f"{name} was not added.", ok_label="OK")
+        return 0
+
+    entry = cfg["services"].get(key, {})
+    entry.update({"adapter": ad.name, "enabled": True, "api_key": paste})
+    cfg["services"][key] = entry
+    save_config(cfg)
+
+    detail = ""
+    if probe.windows:
+        w = probe.windows[0]
+        detail = f"\n\n{w.label}: {w.used_pct:.0f}% used"
+    notify(f"Linked {name}")
+    confirm(f"✓ {name} linked and verified.{detail}", ok_label="Done")
+    return 0
+
+
 def finish_manual(cfg, key, entry, e):
-    """Collect user-entered values. Anything skipped stays empty — never guessed."""
+    """Collect user-entered values in ONE dialog. Skipped fields stay empty —
+    never guessed."""
+    import time
     name = e["name"]
     login = e.get("login", "")
-    if not confirm(f"{name} has no usage API.\n\n"
-                   f"Check your balance here:\n{login}\n\n"
-                   "Then enter what you see. Leave blank to skip.",
-                   ok_label="Continue"):
+
+    vals = ask_form(
+        TITLE,
+        f"{name} has no usage API, so you enter the numbers.\n"
+        f"Check yours at: {login}",
+        [("plan", "plan"), ("credits", "remaining"),
+         ("credits_total", "total"), ("renews_on", "renews YYYY-MM-DD")])
+    if vals is None:
         return 0
 
-    plan = ask(f"{name} — plan label? (optional)", "")
-    if plan is None:
-        return 0
-    credits = ask(f"{name} — credits/units REMAINING?\n(leave blank to skip)", "")
-    if credits is None:
-        return 0
-    total = ask(f"{name} — total per period?\n(leave blank to skip)", "")
-    if total is None:
-        return 0
-    renews = ask(f"{name} — renews on? YYYY-MM-DD\n(leave blank to skip)", "")
-    if renews is None:
-        return 0
-
-    import time
-    if plan:
-        entry["plan"] = plan
-    for field, raw in (("credits", credits), ("credits_total", total)):
+    if vals.get("plan"):
+        entry["plan"] = vals["plan"]
+    for field in ("credits", "credits_total"):
+        raw = vals.get(field)
         if raw:
             try:
                 entry[field] = float(raw) if "." in raw else int(raw)
             except ValueError:
                 entry[field] = raw
-    if renews:
-        entry["renews_on"] = renews
-    if not credits and not renews:
+    if vals.get("renews_on"):
+        entry["renews_on"] = vals["renews_on"]
+    if not vals.get("credits") and not vals.get("renews_on"):
         entry["note"] = "Added — no values entered yet"
     entry["updated"] = time.strftime("%Y-%m-%d")
 
