@@ -291,133 +291,170 @@ def cmd_list(a) -> int:
 
 
 def cmd_link(a) -> int:
-    """Interactive: show what CAN be linked, let the user choose.
+    """Browse every known AI platform and add the ones you use.
 
-    Nothing is read or sent until the user picks it. This is the consent
-    gate — the tool never decides what to track on your behalf.
+    Shows the full catalog — not just what's installed — so you can see what
+    exists. Nothing is read or sent until you pick an entry and confirm.
     """
+    from .catalog import by_key, sorted_catalog
+
     load_adapters()
     cfg = load_config()
     reg = registry()
     tracked = set(cfg.get("services", {}))
 
-    # Restrict to one adapter when named: `aiquota link chatgpt`
-    names = [a.name] if getattr(a, "name", None) else sorted(reg)
-    if getattr(a, "name", None) and a.name not in reg:
-        print(f"error: no adapter '{a.name}'. Try: aiquota adapters",
-              file=sys.stderr)
-        return 1
+    entries = sorted_catalog()
+    if getattr(a, "name", None):
+        entries = [e for e in entries if e["key"] == a.name
+                   or a.name.lower() in e["name"].lower()]
+        if not entries:
+            print(f"error: '{a.name}' is not in the catalog. "
+                  "Run `aiquota link` to see everything.", file=sys.stderr)
+            return 1
 
-    print(C.bold("Link an AI account\n"))
+    print(C.bold("\nAdd an AI account\n"))
     print(C.dim("Nothing is read until you choose it.\n"))
 
     options: List[Dict[str, Any]] = []
-    for key in names:
-        ad = reg[key]
-        if key == "manual":
-            continue
-        try:
-            found = ad.detect() or []
-        except Exception:
-            found = []
-        state = C.green(" (already tracked)") if key in tracked else ""
-        print(f"{C.cyan(ad.service or key)}{state}")
-        print(C.dim(f"  {ad.summary}"))
-        if ad.cost_note:
-            print(C.dim(f"  ⚠ {ad.cost_note}"))
+    BADGE = {
+        "live": lambda: C.green("● live"),
+        "soon": lambda: C.yellow("◐ manual for now"),
+        "manual": lambda: C.dim("○ manual"),
+    }
+
+    for e in entries:
+        ad = reg.get(e["adapter"])
+        found = []
+        if ad and e["support"] == "live":
+            try:
+                found = ad.detect() or []
+            except Exception:
+                found = []
+
+        options.append({"entry": e, "found": found})
+        n = len(options)
+        state = C.green("  ✓ tracked") if e["key"] in tracked else ""
+        badge = BADGE.get(e["support"], lambda: "")()
+        print(f"  {C.bold('[' + str(n) + ']'):<6} {C.cyan(e['name']):<24} "
+              f"{badge}{state}")
+        print(C.dim(f"         {e['note']}"))
         if found:
             for f in found:
-                options.append({"adapter": key, "service": ad.service, **f})
-                n = len(options)
-                print(f"  {C.bold('[' + str(n) + ']')} {f['detail']}")
-                print(C.dim(f"      from {f['source']}"))
-        else:
-            print(C.dim("  no credentials found on this machine"))
-            print(C.dim(f"      {ad.setup}"))
+                print(C.green(f"         ✓ found: {f['detail']}"))
+        elif e["support"] == "live":
+            print(C.dim(f"         needs: {e['login']}"))
         print()
 
-    # Manual is always offerable — it's how services with no API get tracked.
-    options.append({"adapter": "manual", "service": None,
-                    "detail": "Track a service manually (you enter the numbers)",
-                    "source": "you", "config": {}})
-    print(f"{C.cyan('Anything else')}")
-    print(f"  {C.bold('[' + str(len(options)) + ']')} "
-          "Track a service manually (you enter the numbers)")
+    # Always offer an escape hatch for platforms not in the catalog.
+    options.append({"entry": {"key": "", "name": "Something else",
+                              "adapter": "manual", "support": "manual",
+                              "note": "any service not listed above",
+                              "login": "wherever it shows your usage"},
+                    "found": []})
+    print(f"  {C.bold('[' + str(len(options)) + ']'):<6} "
+          f"{C.cyan('Something else…'):<24} {C.dim('○ manual')}")
+    print(C.dim("         any AI service not listed above"))
     print()
 
     if a.list_only:
+        print(C.dim("Run `aiquota link` (without --list) to add one.\n"))
         return 0
 
     try:
-        raw = input("Link which? (number, or Enter to cancel): ").strip()
+        raw = input("Add which? (number, or Enter to cancel): ").strip()
     except EOFError:
         raw = ""
     if not raw:
-        print("cancelled — nothing linked")
+        print("cancelled — nothing added")
         return 0
     if not raw.isdigit() or not (1 <= int(raw) <= len(options)):
         print("error: not a valid choice", file=sys.stderr)
         return 1
 
-    choice = options[int(raw) - 1]
-    adapter = choice["adapter"]
+    chosen = options[int(raw) - 1]
+    e, found = chosen["entry"], chosen["found"]
+    key = e["key"]
 
-    if adapter == "manual":
+    # ---- live path: a real credential was found, ask before using it -----
+    if found:
+        f = found[0]
+        print()
+        print(f"This will let aiquota read {C.bold(f['source'])}")
+        print(C.dim(f"  {f['detail']}"))
+        ad = reg.get(e["adapter"])
+        if ad and ad.cost_note:
+            print(C.yellow(f"  Note: {ad.cost_note}"))
         try:
-            name = input("Service name (e.g. higgsfield): ").strip()
+            ok = input("Link it? [y/N] ").strip().lower()
         except EOFError:
-            return 1
-        if not name:
-            print("cancelled")
+            ok = ""
+        if ok not in ("y", "yes"):
+            print("cancelled — nothing added")
             return 0
-        entry: Dict[str, Any] = {
-            "adapter": "manual", "enabled": True,
-            "service": name.replace("-", " ").replace("_", " ").title()}
-        plan = input("Plan label (optional): ").strip()
+        entry = cfg["services"].get(key, {})
+        entry.update({"adapter": e["adapter"], "enabled": True})
+        entry.update(f.get("config") or {})
+        plan = input("Plan label (optional, e.g. 'Max'): ").strip()
         if plan:
             entry["plan"] = plan
-        credits = input("Credits remaining (optional): ").strip()
-        total = input("Credits total (optional): ").strip()
-        renews = input("Renews on YYYY-MM-DD (optional): ").strip()
-        if credits:
-            entry["credits"] = _coerce(credits)
-        if total:
-            entry["credits_total"] = _coerce(total)
-        if renews:
-            entry["renews_on"] = renews
-        entry["updated"] = time.strftime("%Y-%m-%d")
-        cfg["services"][name] = entry
+        cfg["services"][key] = entry
         save_config(cfg)
-        print(C.green(f"\n✓ linked '{name}' (manual)"))
+        print(C.green(f"\n✓ linked {e['name']}"))
+        print(C.dim(f"  run `aiquota` to see it · `aiquota unlink {key}` to undo"))
         return 0
 
-    # Confirm before enabling a borrowed credential.
+    # ---- live adapter but nothing found: explain, don't fake it ----------
+    if e["support"] == "live":
+        print()
+        print(C.yellow(f"No {e['name']} credential found on this machine."))
+        print(C.dim(f"  {e['login']}"))
+        print(C.dim("  Set it up, then run `aiquota link` again."))
+        return 0
+
+    # ---- manual path: track it with numbers the USER provides ------------
     print()
-    print(f"This will let aiquota read {C.bold(choice['source'])}")
-    print(C.dim(f"  {choice['detail']}"))
-    ad = reg[adapter]
-    if ad.cost_note:
-        print(C.yellow(f"  Note: {ad.cost_note}"))
+    print(f"{C.bold(e['name'])} has no usage API — {e['note']}")
+    print(C.dim(f"  Check yours at: {e['login']}"))
+    print(C.dim("  Enter what you see there, or press Enter to skip a field.\n"))
+
+    entry: Dict[str, Any] = {"adapter": "manual", "enabled": True,
+                             "service": e["name"]}
+    # "Something else" has no catalog key — ask for the name.
+    if not key:
+        try:
+            typed = input("Service name: ").strip()
+        except EOFError:
+            typed = ""
+        if not typed:
+            print("cancelled")
+            return 0
+        key = typed.lower().replace(" ", "-")
+        entry["service"] = typed.replace("-", " ").replace("_", " ").title()
+
     try:
-        ok = input("Link it? [y/N] ").strip().lower()
+        plan = input("Plan label (optional): ").strip()
+        credits = input("Credits / units remaining (optional): ").strip()
+        total = input("Total per period (optional): ").strip()
+        renews = input("Renews on YYYY-MM-DD (optional): ").strip()
     except EOFError:
-        ok = ""
-    if ok not in ("y", "yes"):
-        print("cancelled — nothing linked")
+        print("cancelled")
         return 0
 
-    entry = cfg["services"].get(adapter, {"adapter": adapter})
-    entry["adapter"] = adapter
-    entry["enabled"] = True
-    entry.update(choice.get("config") or {})
-    label = input(f"Plan label (optional, e.g. 'Max'): ").strip()
-    if label:
-        entry["plan"] = label
-    cfg["services"][adapter] = entry
+    if plan:
+        entry["plan"] = plan
+    if credits:
+        entry["credits"] = _coerce(credits)
+    if total:
+        entry["credits_total"] = _coerce(total)
+    if renews:
+        entry["renews_on"] = renews
+    if not credits and not renews:
+        entry["note"] = "Added — run `aiquota set %s credits=…` to fill in" % key
+    entry["updated"] = time.strftime("%Y-%m-%d")
+    cfg["services"][key] = entry
     save_config(cfg)
-    print(C.green(f"\n✓ linked {choice['service']}"))
-    print(C.dim("  run `aiquota` to see it, or `aiquota unlink "
-                f"{adapter}` to undo"))
+    print(C.green(f"\n✓ added {entry['service']} (manual)"))
+    print(C.dim(f"  update anytime: aiquota set {key} credits=…"))
     return 0
 
 

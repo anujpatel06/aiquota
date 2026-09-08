@@ -56,6 +56,16 @@ export const className = `
   .meta { font-size: 10px; color: #6e7681; margin-top: 4px; }
   .err { font-size: 10px; color: #f85149; margin-top: 3px; }
   .empty { font-size: 11px; color: #6e7681; }
+  .cta {
+    margin-top: 12px; padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 11px; color: #58a6ff;
+  }
+  .cta code {
+    font-family: Menlo, monospace; font-size: 10.5px;
+    background: rgba(88, 166, 255, 0.1); padding: 1px 5px;
+    border-radius: 4px;
+  }
 `;
 
 const tone = (p) => (p >= 85 ? "#f85149" : p >= 60 ? "#d29922" : "#3fb950");
@@ -75,7 +85,10 @@ export const render = ({ output }) => {
     return (
       <div>
         <h1>AI Quota</h1>
-        <div className="empty">No services configured</div>
+        <div className="empty">No accounts added yet</div>
+        <div className="cta">
+          Run <code>aiquota link</code> to add one
+        </div>
       </div>
     );
   }
@@ -152,6 +165,10 @@ export const render = ({ output }) => {
           </div>
         );
       })}
+
+      <div className="cta">
+        ＋ Add another: <code>aiquota link</code>
+      </div>
     </div>
   );
 };

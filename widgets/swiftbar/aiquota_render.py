@@ -79,9 +79,9 @@ def main():
                   "to activate' terminal=false refresh=true" % s.get("name", ""))
 
     print("---")
-    # Link/unlink from the menu bar itself: opens Terminal running `aiquota
-    # link`, so consent is always given interactively by the user.
-    print("Link an account… | bash=/usr/bin/osascript "
+    # The CTA: browse every known platform and add one. Opens Terminal so the
+    # picker is interactive and consent is always explicit.
+    print("＋ Add an AI account… | color=#58a6ff bash=/usr/bin/osascript "
           "param1=-e param2='tell app \"Terminal\" to do script \"aiquota link\"' "
           "param3=-e param4='tell app \"Terminal\" to activate' "
           "terminal=false refresh=true")

@@ -56,32 +56,49 @@ and confirm**. Nothing is read or sent before that.
 ```
 $ aiquota link
 
-Link an AI account
+Add an AI account
 
 Nothing is read until you choose it.
 
-ChatGPT
-  Codex/Work usage windows (NOT general chat quota)
-  [1] Codex CLI login (auth_mode: chatgpt), account 2754df98…, last refreshed 2026-09-07
-      from ~/.codex/auth.json
+  [1]    ChatGPT / Codex          ● live  ✓ tracked
+         Codex/Work windows + credits (NOT general chat quota)
+         ✓ found: Codex CLI login (auth_mode: chatgpt), account 2754df98…
 
-Claude
-  Claude Pro/Max 5h + weekly windows (undocumented headers)
-  ⚠ reads headers from a 1-token Haiku call (negligible quota)
-  [2] Hermes agent token — OAuth (subscription)
-      from ~/.hermes/.env
+  [2]    Claude                   ● live
+         Pro/Max 5-hour + weekly windows, reset times
+         needs: Claude Code login, or an OAuth token
 
-Anything else
-  [3] Track a service manually (you enter the numbers)
+  [3]    Cursor                   ◐ manual for now
+         Request quota is shown in-app; no documented API yet
 
-Link which? (number, or Enter to cancel):
+  [7]    Gemini                   ○ manual
+         No consumer quota API; AI Studio shows API-tier limits only
+
+  ... 16 platforms total ...
+
+  [17]   Something else…          ○ manual
+         any AI service not listed above
+
+Add which? (number, or Enter to cancel):
 ```
+
+The badges are honest about what you'll actually get:
+
+| Badge | Meaning |
+|---|---|
+| `● live` | An adapter fetches real usage once you link a credential |
+| `◐ manual for now` | An endpoint likely exists; no adapter written yet — PRs welcome |
+| `○ manual` | No usage API exists; you enter the numbers |
+
+Most AI platforms publish no consumer usage API at all. Listing them as
+`manual` is deliberate — a browsable list of everything you pay for beats a
+short list of only what can be automated.
 
 Useful variants:
 
 ```bash
-aiquota link --list      # just show what's linkable, change nothing
-aiquota link chatgpt     # only consider one service
+aiquota link --list      # just browse, change nothing
+aiquota link cursor      # jump straight to one platform
 aiquota unlink chatgpt   # stop using the credential, keep the service
 ```
 
@@ -129,13 +146,22 @@ aiquota add midjourney --adapter manual \
 These render as `manual`, so you're never fooled into thinking a hand-typed
 number was fetched live.
 
-## Supported services
+## Supported platforms
 
-| Service | What you get | How |
+`aiquota link` lists all of these. Two fetch real usage; the rest are tracked
+with numbers you enter, because their vendors publish no consumer usage API.
+
+| Platform | Status | What you get |
 |---|---|---|
-| **Claude** Pro/Max | 5-hour + weekly windows, reset times, overage state | `anthropic-ratelimit-unified-*` headers |
-| **ChatGPT** | Codex/Work windows, credit balance | `backend-api/wham/usage` |
-| **Anything else** | credits / usage / renewal you enter | `manual` adapter |
+| **Claude** (Anthropic) | ● live | 5-hour + weekly windows, resets, overage state |
+| **ChatGPT / Codex** (OpenAI) | ● live | Codex/Work windows + credits |
+| Cursor, GitHub Copilot, ElevenLabs, OpenRouter | ◐ manual for now | An endpoint likely exists — adapters welcome |
+| Gemini, Grok, Perplexity, Midjourney, Higgsfield, Runway, Suno, v0, Lovable, Replit | ○ manual | No usage API; you enter the numbers |
+| Anything else | ○ manual | "Something else…" in the picker |
+
+Adding a platform to the catalog does **not** make it fetchable. If you know a
+real endpoint for a `manual` entry, that's the most valuable PR you can send —
+see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Important caveats
 

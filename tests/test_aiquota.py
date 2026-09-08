@@ -396,8 +396,9 @@ class TestLink(Base):
             self.assertNotIn("token_files", s)
 
     def test_manual_option_always_offered(self):
+        """A platform not in the catalog must still be addable."""
         _, out, _ = self._link("", "--list")
-        self.assertIn("manually", out.lower())
+        self.assertIn("something else", out.lower())
 
     def test_unlink_clears_credentials_but_keeps_service(self):
         from aiquota.core import load_config, save_config
@@ -427,6 +428,82 @@ class TestLink(Base):
                 blob = json.dumps(f)
                 self.assertNotIn("sk-ant-", blob)
                 self.assertNotIn("eyJhbGci", blob)
+
+
+class TestCatalog(Base):
+    """The catalog is the browse-and-add surface. It must stay honest."""
+
+    def test_catalog_entries_wellformed(self):
+        from aiquota.catalog import CATALOG
+        keys = set()
+        for e in CATALOG:
+            for field in ("key", "name", "adapter", "support", "note", "login"):
+                self.assertIn(field, e, f"{e.get('name')} missing {field}")
+            self.assertIn(e["support"], ("live", "manual", "soon"))
+            self.assertNotIn(e["key"], keys, "duplicate catalog key")
+            keys.add(e["key"])
+
+    def test_live_entries_have_a_real_adapter(self):
+        """A 'live' badge is a promise — it needs an adapter that can fetch."""
+        from aiquota.catalog import CATALOG
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        reg = registry()
+        for e in CATALOG:
+            if e["support"] == "live":
+                self.assertIn(e["adapter"], reg,
+                              f"{e['name']} claims live but has no adapter")
+
+    def test_non_live_entries_use_manual_adapter(self):
+        """Anything we can't fetch must render as manual, never as live."""
+        from aiquota.catalog import CATALOG
+        for e in CATALOG:
+            if e["support"] != "live":
+                self.assertEqual(e["adapter"], "manual",
+                                 f"{e['name']} must be manual until fetchable")
+
+    def test_link_list_shows_whole_catalog(self):
+        from aiquota.catalog import CATALOG
+        from aiquota.cli import main
+        import io
+        from contextlib import redirect_stdout
+        out = io.StringIO()
+        with redirect_stdout(out):
+            main(["link", "--list", "--color", "never"])
+        text = out.getvalue()
+        for e in CATALOG:
+            self.assertIn(e["name"], text, f"{e['name']} missing from picker")
+
+    def test_link_filter_by_name(self):
+        from aiquota.cli import main
+        import io
+        from contextlib import redirect_stdout
+        out = io.StringIO()
+        with redirect_stdout(out):
+            main(["link", "higgsfield", "--list", "--color", "never"])
+        text = out.getvalue()
+        self.assertIn("Higgsfield", text)
+        self.assertNotIn("Midjourney", text)
+
+    def test_manual_add_stores_only_user_values(self):
+        """Skipping every field must NOT invent numbers."""
+        from aiquota.cli import main
+        import io
+        from contextlib import redirect_stdout
+        old = sys.stdin
+        sys.stdin = io.StringIO("9\n\n\n\n\n")   # pick one, skip all fields
+        try:
+            with redirect_stdout(io.StringIO()):
+                main(["link", "--color", "never"])
+        finally:
+            sys.stdin = old
+        from aiquota.core import load_config
+        svcs = load_config()["services"]
+        added = [v for k, v in svcs.items() if v.get("adapter") == "manual"]
+        self.assertTrue(added, "should have added something")
+        for v in added:
+            self.assertIsNone(v.get("credits"))
+            self.assertIsNone(v.get("credits_total"))
 
 
 class TestHTML(Base):
