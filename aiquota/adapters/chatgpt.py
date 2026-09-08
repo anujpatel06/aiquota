@@ -68,6 +68,33 @@ class ChatGPTAdapter(Adapter):
              "aiquota set chatgpt autodiscover=true  (reads ~/.codex/auth.json), "
              "or set AIQUOTA_CODEX_TOKEN. Covers the Codex/Work meter only.")
 
+    def detect(self):
+        """Look for a Codex login WITHOUT using it."""
+        found = []
+        for raw in ["~/.codex/auth.json"]:
+            p = os.path.expanduser(raw)
+            if not os.path.exists(p):
+                continue
+            try:
+                with open(p) as f:
+                    d = json.load(f)
+            except Exception:
+                continue
+            t = d.get("tokens") if isinstance(d.get("tokens"), dict) else d
+            if not (t.get("access_token") or t.get("accessToken")):
+                continue
+            acct = (t.get("account_id") or t.get("accountId") or "")
+            detail = "Codex CLI login"
+            if d.get("auth_mode"):
+                detail += f" (auth_mode: {d['auth_mode']})"
+            if acct:
+                detail += f", account {acct[:8]}…"
+            if d.get("last_refresh"):
+                detail += f", last refreshed {str(d['last_refresh'])[:10]}"
+            found.append({"source": raw, "detail": detail,
+                          "config": {"autodiscover": True}})
+        return found
+
     def probe(self, conf: Dict[str, Any]) -> Result:
         tok, acct, source = _auth(conf)
         if not tok:

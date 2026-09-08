@@ -346,6 +346,89 @@ class TestCredentialConsent(Base):
             os.environ.pop("AIQUOTA_CODEX_TOKEN", None)
 
 
+class TestLink(Base):
+    """`link` is the consent gate: it must never link without an explicit yes."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake = os.path.join(self.home, "codex_auth.json")
+        with open(self.fake, "w") as f:
+            json.dump({"auth_mode": "chatgpt",
+                       "tokens": {"access_token": "tok", "account_id": "acct1234"}}, f)
+
+    def _link(self, stdin_text, *args):
+        """Run cmd_link with piped stdin."""
+        from aiquota.cli import main
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        old = sys.stdin
+        sys.stdin = io.StringIO(stdin_text)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["link", *args])
+        finally:
+            sys.stdin = old
+        return code, out.getvalue(), err.getvalue()
+
+    def test_list_only_changes_nothing(self):
+        from aiquota.core import load_config
+        before = json.dumps(load_config(), sort_keys=True)
+        code, out, _ = self._link("", "--list")
+        self.assertEqual(code, 0)
+        for m in [m for m in sys.modules if m.startswith("aiquota")]:
+            del sys.modules[m]
+        from aiquota.core import load_config as lc
+        self.assertEqual(before, json.dumps(lc(), sort_keys=True))
+
+    def test_empty_input_cancels(self):
+        code, out, _ = self._link("\n")
+        self.assertEqual(code, 0)
+        self.assertIn("cancel", out.lower())
+
+    def test_declining_links_nothing(self):
+        code, out, _ = self._link("1\nn\n")
+        self.assertEqual(code, 0)
+        self.assertIn("cancel", out.lower())
+        from aiquota.core import load_config
+        for s in load_config().get("services", {}).values():
+            self.assertNotIn("autodiscover", s)
+            self.assertNotIn("token_files", s)
+
+    def test_manual_option_always_offered(self):
+        _, out, _ = self._link("", "--list")
+        self.assertIn("manually", out.lower())
+
+    def test_unlink_clears_credentials_but_keeps_service(self):
+        from aiquota.core import load_config, save_config
+        cfg = load_config()
+        cfg["services"]["chatgpt"] = {"adapter": "chatgpt", "enabled": True,
+                                      "autodiscover": True}
+        save_config(cfg)
+        code, out, _ = self.run_cli("unlink", "chatgpt")
+        self.assertEqual(code, 0)
+        for m in [m for m in sys.modules if m.startswith("aiquota")]:
+            del sys.modules[m]
+        from aiquota.core import load_config as lc
+        svc = lc()["services"]["chatgpt"]
+        self.assertNotIn("autodiscover", svc)
+        self.assertIn("chatgpt", lc()["services"], "service should remain tracked")
+
+    def test_unlink_unknown_fails(self):
+        code, _, err = self.run_cli("unlink", "ghost")
+        self.assertEqual(code, 1)
+
+    def test_detect_does_not_return_secrets(self):
+        """detect() output is printed to the screen — it must not leak tokens."""
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        for name, ad in registry().items():
+            for f in (ad.detect() or []):
+                blob = json.dumps(f)
+                self.assertNotIn("sk-ant-", blob)
+                self.assertNotIn("eyJhbGci", blob)
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

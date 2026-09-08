@@ -99,6 +99,15 @@ class Adapter:
     def probe(self, conf: Dict[str, Any]) -> Result:
         raise NotImplementedError
 
+    def detect(self) -> List[Dict[str, Any]]:
+        """Report credentials found on this machine WITHOUT using them.
+
+        Powers `aiquota link`, which asks before anything is read. Return a
+        list of {source, detail, config} — `config` being the settings that
+        would enable it if the user consents. Must not perform network calls.
+        """
+        return []
+
     # convenience for subclasses
     def make(self, conf: Dict[str, Any], **kw) -> Result:
         kw.setdefault("plan", conf.get("plan") or self.service)

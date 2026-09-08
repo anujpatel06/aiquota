@@ -45,9 +45,44 @@ Python 3.8+. No other requirements.
 ## Quick start
 
 ```bash
-aiquota adapters                  # what's supported
-aiquota add claude --plan "Max"   # track Claude
-aiquota                           # show everything
+aiquota link      # see what's on your machine, choose what to track
+aiquota           # show everything
+```
+
+`link` is the only way an account gets connected. It lists credentials it can
+see — which account, from which file — and **links nothing until you pick one
+and confirm**. Nothing is read or sent before that.
+
+```
+$ aiquota link
+
+Link an AI account
+
+Nothing is read until you choose it.
+
+ChatGPT
+  Codex/Work usage windows (NOT general chat quota)
+  [1] Codex CLI login (auth_mode: chatgpt), account 2754df98…, last refreshed 2026-09-07
+      from ~/.codex/auth.json
+
+Claude
+  Claude Pro/Max 5h + weekly windows (undocumented headers)
+  ⚠ reads headers from a 1-token Haiku call (negligible quota)
+  [2] Hermes agent token — OAuth (subscription)
+      from ~/.hermes/.env
+
+Anything else
+  [3] Track a service manually (you enter the numbers)
+
+Link which? (number, or Enter to cancel):
+```
+
+Useful variants:
+
+```bash
+aiquota link --list      # just show what's linkable, change nothing
+aiquota link chatgpt     # only consider one service
+aiquota unlink chatgpt   # stop using the credential, keep the service
 ```
 
 ## Usage
@@ -120,16 +155,19 @@ Read these before trusting a number.
 
 ### Credentials
 
-Adapters look for existing logins first, so there's usually nothing to set up:
+**aiquota never uses a credential you haven't linked.** Run `aiquota link` to
+see what's available and choose. It will find logins belonging to other apps
+(Claude Code, Codex CLI, Hermes) but will not touch them until you say so.
 
-| Adapter | Sources, in order |
+| Adapter | Can link from |
 |---|---|
-| `claude` | `token` in config → `AIQUOTA_CLAUDE_TOKEN` / `ANTHROPIC_TOKEN` → `~/.claude/.credentials.json`, `~/.hermes/.env` |
-| `chatgpt` | `token` in config → `AIQUOTA_CODEX_TOKEN` → `~/.codex/auth.json` |
+| `claude` | `AIQUOTA_CLAUDE_TOKEN` / `ANTHROPIC_TOKEN` env, `~/.claude/.credentials.json`, `~/.hermes/.env` |
+| `chatgpt` | `AIQUOTA_CODEX_TOKEN` env, `~/.codex/auth.json` |
 
-Set `AIQUOTA_NO_AUTODISCOVER=1` to disable scanning other apps' credential
-files. Config lives at `~/.config/aiquota/config.json`, chmod `0600` because it
-may hold tokens.
+Env vars and tokens you put in the config are used directly — you set those
+deliberately. Reading *another application's* credential file always requires
+`link` (or `autodiscover=true`). Set `AIQUOTA_NO_AUTODISCOVER=1` to block it
+entirely. Config lives at `~/.config/aiquota/config.json`, chmod `0600`.
 
 ## Writing an adapter
 

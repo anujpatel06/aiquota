@@ -290,6 +290,165 @@ def cmd_list(a) -> int:
     return 0
 
 
+def cmd_link(a) -> int:
+    """Interactive: show what CAN be linked, let the user choose.
+
+    Nothing is read or sent until the user picks it. This is the consent
+    gate — the tool never decides what to track on your behalf.
+    """
+    load_adapters()
+    cfg = load_config()
+    reg = registry()
+    tracked = set(cfg.get("services", {}))
+
+    # Restrict to one adapter when named: `aiquota link chatgpt`
+    names = [a.name] if getattr(a, "name", None) else sorted(reg)
+    if getattr(a, "name", None) and a.name not in reg:
+        print(f"error: no adapter '{a.name}'. Try: aiquota adapters",
+              file=sys.stderr)
+        return 1
+
+    print(C.bold("Link an AI account\n"))
+    print(C.dim("Nothing is read until you choose it.\n"))
+
+    options: List[Dict[str, Any]] = []
+    for key in names:
+        ad = reg[key]
+        if key == "manual":
+            continue
+        try:
+            found = ad.detect() or []
+        except Exception:
+            found = []
+        state = C.green(" (already tracked)") if key in tracked else ""
+        print(f"{C.cyan(ad.service or key)}{state}")
+        print(C.dim(f"  {ad.summary}"))
+        if ad.cost_note:
+            print(C.dim(f"  ⚠ {ad.cost_note}"))
+        if found:
+            for f in found:
+                options.append({"adapter": key, "service": ad.service, **f})
+                n = len(options)
+                print(f"  {C.bold('[' + str(n) + ']')} {f['detail']}")
+                print(C.dim(f"      from {f['source']}"))
+        else:
+            print(C.dim("  no credentials found on this machine"))
+            print(C.dim(f"      {ad.setup}"))
+        print()
+
+    # Manual is always offerable — it's how services with no API get tracked.
+    options.append({"adapter": "manual", "service": None,
+                    "detail": "Track a service manually (you enter the numbers)",
+                    "source": "you", "config": {}})
+    print(f"{C.cyan('Anything else')}")
+    print(f"  {C.bold('[' + str(len(options)) + ']')} "
+          "Track a service manually (you enter the numbers)")
+    print()
+
+    if a.list_only:
+        return 0
+
+    try:
+        raw = input("Link which? (number, or Enter to cancel): ").strip()
+    except EOFError:
+        raw = ""
+    if not raw:
+        print("cancelled — nothing linked")
+        return 0
+    if not raw.isdigit() or not (1 <= int(raw) <= len(options)):
+        print("error: not a valid choice", file=sys.stderr)
+        return 1
+
+    choice = options[int(raw) - 1]
+    adapter = choice["adapter"]
+
+    if adapter == "manual":
+        try:
+            name = input("Service name (e.g. higgsfield): ").strip()
+        except EOFError:
+            return 1
+        if not name:
+            print("cancelled")
+            return 0
+        entry: Dict[str, Any] = {
+            "adapter": "manual", "enabled": True,
+            "service": name.replace("-", " ").replace("_", " ").title()}
+        plan = input("Plan label (optional): ").strip()
+        if plan:
+            entry["plan"] = plan
+        credits = input("Credits remaining (optional): ").strip()
+        total = input("Credits total (optional): ").strip()
+        renews = input("Renews on YYYY-MM-DD (optional): ").strip()
+        if credits:
+            entry["credits"] = _coerce(credits)
+        if total:
+            entry["credits_total"] = _coerce(total)
+        if renews:
+            entry["renews_on"] = renews
+        entry["updated"] = time.strftime("%Y-%m-%d")
+        cfg["services"][name] = entry
+        save_config(cfg)
+        print(C.green(f"\n✓ linked '{name}' (manual)"))
+        return 0
+
+    # Confirm before enabling a borrowed credential.
+    print()
+    print(f"This will let aiquota read {C.bold(choice['source'])}")
+    print(C.dim(f"  {choice['detail']}"))
+    ad = reg[adapter]
+    if ad.cost_note:
+        print(C.yellow(f"  Note: {ad.cost_note}"))
+    try:
+        ok = input("Link it? [y/N] ").strip().lower()
+    except EOFError:
+        ok = ""
+    if ok not in ("y", "yes"):
+        print("cancelled — nothing linked")
+        return 0
+
+    entry = cfg["services"].get(adapter, {"adapter": adapter})
+    entry["adapter"] = adapter
+    entry["enabled"] = True
+    entry.update(choice.get("config") or {})
+    label = input(f"Plan label (optional, e.g. 'Max'): ").strip()
+    if label:
+        entry["plan"] = label
+    cfg["services"][adapter] = entry
+    save_config(cfg)
+    print(C.green(f"\n✓ linked {choice['service']}"))
+    print(C.dim("  run `aiquota` to see it, or `aiquota unlink "
+                f"{adapter}` to undo"))
+    return 0
+
+
+def cmd_unlink(a) -> int:
+    """Stop using a linked credential, keeping the service configured."""
+    cfg = load_config()
+    if a.name not in cfg.get("services", {}):
+        print(f"error: '{a.name}' is not tracked", file=sys.stderr)
+        return 1
+    entry = cfg["services"][a.name]
+    removed = [k for k in ("autodiscover", "token_files", "token",
+                           "auth_files", "account_id") if k in entry]
+    for k in removed:
+        entry.pop(k)
+    save_config(cfg)
+    try:
+        from .core import _read_cache, _write_cache
+        c = _read_cache()
+        c.pop(a.name, None)
+        _write_cache(c)
+    except Exception:
+        pass
+    if removed:
+        print(f"unlinked '{a.name}' (cleared: {', '.join(removed)})")
+    else:
+        print(f"'{a.name}' had no linked credentials")
+    print(C.dim("  the service is still tracked; re-link with "
+                f"`aiquota link {a.name}`"))
+    return 0
+
+
 def cmd_doctor(a) -> int:
     load_adapters(verbose=True)
     cfg = load_config()
@@ -369,6 +528,18 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--json", action="store_true")
     ad.set_defaults(fn=cmd_adapters)
 
+    lk = sub.add_parser("link", parents=[common],
+                        help="interactively link an AI account (asks first)")
+    lk.add_argument("name", nargs="?", help="limit to one adapter")
+    lk.add_argument("--list", dest="list_only", action="store_true",
+                    help="only show what could be linked; change nothing")
+    lk.set_defaults(fn=cmd_link)
+
+    ul = sub.add_parser("unlink", parents=[common],
+                        help="stop using a linked credential")
+    ul.add_argument("name")
+    ul.set_defaults(fn=cmd_unlink)
+
     dr = sub.add_parser("doctor", parents=[common], help="diagnose configuration problems")
     dr.set_defaults(fn=cmd_doctor)
     return p
@@ -379,7 +550,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = build_parser()
 
     KNOWN = {"status", "add", "remove", "rm", "enable", "disable",
-             "set", "list", "adapters", "doctor"}
+             "set", "list", "adapters", "doctor", "link", "unlink"}
     HELP = {"-h", "--help"}
 
     # `aiquota`, `aiquota --color always`, `aiquota claude` all mean "status".

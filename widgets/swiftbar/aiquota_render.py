@@ -71,8 +71,20 @@ def main():
             print("--renews in %sd | font=Menlo" % ex["renews_in_days"])
         if s.get("error"):
             print("--%s | color=red font=Menlo" % s["error"])
+        # Unlinked services get a one-click way to link, instead of a dead card.
+        if s.get("tier") == "unconfigured":
+            print("--Link this account… | color=#58a6ff bash=/usr/bin/osascript "
+                  "param1=-e param2='tell app \"Terminal\" to do script "
+                  "\"aiquota link %s\"' param3=-e param4='tell app \"Terminal\" "
+                  "to activate' terminal=false refresh=true" % s.get("name", ""))
 
     print("---")
+    # Link/unlink from the menu bar itself: opens Terminal running `aiquota
+    # link`, so consent is always given interactively by the user.
+    print("Link an account… | bash=/usr/bin/osascript "
+          "param1=-e param2='tell app \"Terminal\" to do script \"aiquota link\"' "
+          "param3=-e param4='tell app \"Terminal\" to activate' "
+          "terminal=false refresh=true")
     print("Refresh now | refresh=true")
     print("Open repo | href=https://github.com/anujpatel06/aiquota")
 

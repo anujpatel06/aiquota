@@ -84,6 +84,46 @@ class ClaudeAdapter(Adapter):
     cost_note = "reads headers from a 1-token Haiku call (negligible quota)"
     defaults = {"probe_model": "claude-haiku-4-5-20251001"}
 
+    def detect(self):
+        """Look for Claude OAuth tokens WITHOUT using them."""
+        found = []
+        candidates = [
+            ("~/.claude/.credentials.json", None, "Claude Code login"),
+            ("~/.config/claude/.credentials.json", None, "Claude Code login"),
+            ("~/.hermes/.env", "ANTHROPIC_TOKEN", "Hermes agent token"),
+            ("~/.anthropic_oauth.json", None, "Anthropic OAuth token"),
+        ]
+        for raw, envkey, label in candidates:
+            p = os.path.expanduser(raw)
+            if not os.path.exists(p):
+                continue
+            tok = None
+            if envkey:
+                tok = read_env_file(p, envkey)
+            else:
+                try:
+                    with open(p) as f:
+                        d = json.load(f)
+                    for probe in (d.get("claudeAiOauth"), d):
+                        if isinstance(probe, dict):
+                            tok = probe.get("accessToken") or probe.get("access_token")
+                            if tok:
+                                break
+                except Exception:
+                    pass
+            if not tok:
+                continue
+            kind = ("OAuth (subscription)" if str(tok).startswith("sk-ant-oat")
+                    else "API key (no subscription quota)"
+                    if str(tok).startswith("sk-ant-api") else "token")
+            spec = f"{raw}::{envkey}" if envkey else raw
+            found.append({
+                "source": raw,
+                "detail": f"{label} — {kind}",
+                "config": {"token_files": [spec]},
+            })
+        return found
+
     def probe(self, conf: Dict[str, Any]) -> Result:
         tok = _token(conf)
         if not tok:
