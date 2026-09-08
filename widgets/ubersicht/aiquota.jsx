@@ -62,7 +62,11 @@ export const className = `
   .hdr {
     display: flex; align-items: center; gap: 7px;
     margin-bottom: 14px;
+    pointer-events: auto;      /* drag handle — container is click-through */
+    cursor: grab;
+    user-select: none; -webkit-user-select: none;
   }
+  .hdr:active { cursor: grabbing; }
   .glyph {
     width: 20px; height: 20px; border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
@@ -210,6 +214,102 @@ const shell = (cmd) => {
   exec(`PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH; ${cmd}`);
 };
 
+// ---- dragging -------------------------------------------------------
+// Übersicht owns the outer element and re-runs render() on every refresh,
+// so the position lives in localStorage and is re-applied on each mount.
+const POS_KEY = "aiquota.pos";
+
+const loadPos = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(POS_KEY) || "null");
+    if (v && typeof v.x === "number" && typeof v.y === "number") return v;
+  } catch (e) {}
+  return null;
+};
+
+const applyPos = (el, pos) => {
+  if (!el || !pos) return;
+  // Switch to left/top so dragging works regardless of the CSS anchor.
+  el.style.left = `${pos.x}px`;
+  el.style.top = `${pos.y}px`;
+  el.style.right = "auto";
+  el.style.bottom = "auto";
+};
+
+// Attach drag once per mounted element (guarded by a data flag).
+const makeDraggable = (node) => {
+  if (!node) return;
+  const el = node.closest("#aiquota") || node.parentElement || node;
+  if (!el) return;
+
+  applyPos(el, loadPos());
+
+  if (el.dataset.aiqDrag === "1") return; // already wired
+  el.dataset.aiqDrag = "1";
+
+  const handle = node.querySelector(".hdr");
+  if (!handle) return;
+  handle.style.pointerEvents = "auto";
+  handle.style.cursor = "grab";
+
+  let startX = 0, startY = 0, originX = 0, originY = 0, dragging = false;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const x = Math.max(0, originX + (e.clientX - startX));
+    const y = Math.max(0, originY + (e.clientY - startY));
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    e.preventDefault();
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.style.cursor = "grab";
+    el.style.transition = "";
+    document.removeEventListener("mousemove", onMove, true);
+    document.removeEventListener("mouseup", onUp, true);
+    try {
+      localStorage.setItem(
+        POS_KEY,
+        JSON.stringify({
+          x: parseInt(el.style.left, 10) || 0,
+          y: parseInt(el.style.top, 10) || 0,
+        })
+      );
+    } catch (e) {}
+  };
+
+  handle.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const r = el.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    originX = r.left;
+    originY = r.top;
+    dragging = true;
+    handle.style.cursor = "grabbing";
+    el.style.transition = "none"; // no easing while tracking the cursor
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("mouseup", onUp, true);
+    e.preventDefault();
+  });
+
+  // Double-click the header to snap back to the default corner.
+  handle.addEventListener("dblclick", () => {
+    try {
+      localStorage.removeItem(POS_KEY);
+    } catch (e) {}
+    el.style.left = "";
+    el.style.top = "";
+    el.style.right = "";
+    el.style.bottom = "";
+  });
+};
+
 // Native platform picker; falls back to the terminal flow if absent.
 const openPicker = () =>
   shell(
@@ -244,7 +344,7 @@ export const render = ({ output }) => {
 
   if (!services.length) {
     return (
-      <div>
+      <div ref={makeDraggable}>
         {header}
         <div className="empty">No accounts yet</div>
         <div className="foot">
@@ -257,7 +357,7 @@ export const render = ({ output }) => {
   }
 
   return (
-    <div>
+    <div ref={makeDraggable}>
       {header}
 
       {services.map((s, i) => {
