@@ -145,9 +145,9 @@ def main():
 
 
 def _main():
-    load_adapters()
+    # Adapters are NOT loaded yet — the list comes from the static catalog, so
+    # importing every adapter before showing the window is pure dead time.
     cfg = load_config()
-    reg = registry()
     # 'added' must mean genuinely LINKED — a bare config entry is not.
     tracked = linked_services(cfg)
 
@@ -163,6 +163,10 @@ def _main():
             return 0                      # cancelled
     except Exception:
         picked_key = None
+
+    # Now that a choice exists, load the adapters needed to act on it.
+    load_adapters()
+    reg = registry()
 
     if picked_key == "__other__":
         name = ask("What service do you want to track?\n"

@@ -164,9 +164,37 @@ document.addEventListener('keydown', e => {{
 class _H(http.server.BaseHTTPRequestHandler):
     choice: Optional[str] = None
     done = threading.Event()
+    page: bytes = b""
+    ready = threading.Event()
 
     def do_GET(self):  # noqa: N802
-        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        parsed = urllib.parse.urlparse(self.path)
+
+        # The picker page itself. Chrome is launched at this URL immediately;
+        # if the HTML isn't built yet we wait here, so the WINDOW appears while
+        # the content is still being assembled instead of after.
+        if parsed.path in ("/", "/index.html"):
+            _H.ready.wait(timeout=10)
+            body = _H.page
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        q = urllib.parse.parse_qs(parsed.query)
+
+        # Only /choose is a real selection. Chrome automatically requests
+        # /favicon.ico, which previously counted as a choice and closed the
+        # window ~200ms after it opened.
+        if parsed.path != "/choose":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         _H.choice = (q.get("key") or [""])[0]
         body = (b"<!doctype html><meta charset=utf-8>"
                 b"<style>body{background:#1e1e1e}</style>"
@@ -183,7 +211,17 @@ class _H(http.server.BaseHTTPRequestHandler):
 
 
 def _screen_size() -> tuple:
-    """Main display size, for centring the window. Falls back to 1440x900."""
+    """Main display size, for centring. Cached — the AppleScript call costs
+    ~220ms, which is a fifth of the whole open on a cold click."""
+    cache = os.path.join(os.path.expanduser("~"), ".cache", "aiquota",
+                         "screen.json")
+    try:
+        with open(cache) as f:
+            d = json.load(f)
+            return int(d["w"]), int(d["h"])
+    except Exception:
+        pass
+    w, h = 1440, 900
     try:
         out = subprocess.run(
             ["osascript", "-e",
@@ -191,10 +229,16 @@ def _screen_size() -> tuple:
             capture_output=True, text=True, timeout=5).stdout.strip()
         parts = [int(x.strip()) for x in out.split(",")]
         if len(parts) == 4:
-            return parts[2] - parts[0], parts[3] - parts[1]
+            w, h = parts[2] - parts[0], parts[3] - parts[1]
     except Exception:
         pass
-    return 1440, 900
+    try:
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache, "w") as f:
+            json.dump({"w": w, "h": h}, f)
+    except OSError:
+        pass
+    return w, h
 
 
 def _profile_dir() -> str:
@@ -210,38 +254,27 @@ def _profile_dir() -> str:
 
 def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
                timeout: int = 300) -> Optional[str]:
-    """Show the HTML picker. Returns the chosen catalog key, or None."""
-    logos = _logos()
-    items = [{
-        "key": e["key"],
-        "name": e["name"],
-        "note": e.get("note", ""),
-        "support": e.get("support", "manual"),
-        "added": e["key"] in tracked,
-        "logo": logos.get(e["key"], ""),
-    } for e in entries]
-    items.append({"key": "__other__", "name": "Something else…",
-                  "note": "any AI service not listed above",
-                  "support": "manual", "added": False, "logo": ""})
+    """Show the HTML picker. Returns the chosen catalog key, or None.
 
+    Ordering matters for perceived speed: the server and Chrome start FIRST,
+    then the HTML is built while the window is already opening. Reading the
+    40KB logo bundle and rendering the page happen in parallel with Chrome's
+    ~0.9s cold start instead of being added to it.
+    """
     port = _free_port()
-    html = PAGE.format(items=json.dumps(items), port=port)
-
-    import tempfile
-    fd, path = tempfile.mkstemp(suffix=".html", prefix="aiquota_pick_")
-    with os.fdopen(fd, "w") as f:
-        f.write(html)
 
     _H.choice = None
     _H.done = threading.Event()
+    _H.ready = threading.Event()
+    _H.page = b""
     srv = http.server.HTTPServer(("127.0.0.1", port), _H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
-    # Centre on the main display so it lands where the user is looking.
     W, H = 460, 620
     sw, sh = _screen_size()
     x, y = max(0, (sw - W) // 2), max(0, (sh - H) // 3)
 
+    url = f"http://127.0.0.1:{port}/"
     launched = False
     for browser in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
@@ -250,7 +283,7 @@ def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
             continue
         subprocess.Popen(
             [browser,
-             f"--app=file://{path}",
+             f"--app={url}",
              f"--window-size={W},{H}",
              f"--window-position={x},{y}",
              f"--user-data-dir={_profile_dir()}",   # persistent = instant
@@ -263,8 +296,24 @@ def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
         break
 
     if not launched:
-        subprocess.Popen(["open", "-W", path],
+        subprocess.Popen(["open", url],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Chrome is already starting; build the page now.
+    logos = _logos()
+    items = [{
+        "key": e["key"],
+        "name": e["name"],
+        "note": e.get("note", ""),
+        "support": e.get("support", "manual"),
+        "added": e["key"] in tracked,
+        "logo": logos.get(e["key"], ""),
+    } for e in entries]
+    items.append({"key": "__other__", "name": "Something else…",
+                  "note": "any AI service not listed above",
+                  "support": "manual", "added": False, "logo": ""})
+    _H.page = PAGE.format(items=json.dumps(items), port=port).encode()
+    _H.ready.set()
 
     # Pull the new window to the front — launched from a menu-bar plugin the
     # app window can otherwise open behind whatever the user is working in.
@@ -285,10 +334,6 @@ def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
 
     _H.done.wait(timeout=timeout)
     srv.shutdown()
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
 
     key = _H.choice
     return key or None

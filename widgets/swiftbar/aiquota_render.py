@@ -85,10 +85,12 @@ def main():
         print("%d platform%s not linked | color=#8E8E93"
               % (hidden, "" if hidden == 1 else "s"))
     # CTA: opens a native macOS list of platforms (no terminal needed).
-    # Delegates to add_account.sh so the SwiftBar param escaping stays simple.
+    # NOTE: no refresh=true — SwiftBar would re-run this whole plugin (and
+    # re-probe the APIs) before the window appears, adding up to a second of
+    # dead time to every click. The picker refreshes on its own when it exits.
     here = os.path.dirname(os.path.abspath(__file__))
     adder = os.path.join(here, "add_account.sh")
-    print("＋ Add an AI account… | color=#58a6ff terminal=false refresh=true "
+    print("＋ Add an AI account… | color=#58a6ff terminal=false "
           "bash=%s" % adder)
     print("Refresh now | refresh=true")
     print("Open repo | href=https://github.com/anujpatel06/aiquota")
