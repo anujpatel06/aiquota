@@ -21,14 +21,25 @@ from ._http import fmt_reset, get_json
 URL = "https://chatgpt.com/backend-api/wham/usage"
 
 
-def _auth(conf: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    if conf.get("token"):
-        return str(conf["token"]), conf.get("account_id")
-    if os.environ.get("AIQUOTA_CODEX_TOKEN"):
-        return os.environ["AIQUOTA_CODEX_TOKEN"], os.environ.get("AIQUOTA_CODEX_ACCOUNT")
+def _auth(conf: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], str]:
+    """Return (token, account_id, source_description).
 
-    if os.environ.get("AIQUOTA_NO_AUTODISCOVER") or conf.get("no_autodiscover"):
-        return None, None
+    Explicit config and env vars are used freely — you set those on purpose.
+    Reading ANOTHER application's credential file is different: it's someone
+    else's login, so it requires opt-in via `autodiscover: true`.
+    """
+    if conf.get("token"):
+        return str(conf["token"]), conf.get("account_id"), "config"
+    if os.environ.get("AIQUOTA_CODEX_TOKEN"):
+        return (os.environ["AIQUOTA_CODEX_TOKEN"],
+                os.environ.get("AIQUOTA_CODEX_ACCOUNT"), "env")
+
+    # Opt-in only. Off by default: silently borrowing another app's OAuth
+    # token and sending it to a remote endpoint is not a safe default.
+    if os.environ.get("AIQUOTA_NO_AUTODISCOVER"):
+        return None, None, ""
+    if not conf.get("autodiscover"):
+        return None, None, "needs_optin"
 
     for raw in conf.get("auth_files") or ["~/.codex/auth.json"]:
         p = os.path.expanduser(str(raw))
@@ -44,8 +55,8 @@ def _auth(conf: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         acct = (t.get("account_id") or t.get("accountId")
                 or d.get("account_id") or d.get("accountId"))
         if tok:
-            return tok, acct
-    return None, None
+            return tok, acct, f"borrowed from {raw}"
+    return None, None, ""
 
 
 @register
@@ -53,12 +64,20 @@ class ChatGPTAdapter(Adapter):
     name = "chatgpt"
     service = "ChatGPT"
     summary = "Codex/Work usage windows (NOT general chat quota)"
-    setup = ("Needs a Codex CLI login (~/.codex/auth.json) or "
-             "AIQUOTA_CODEX_TOKEN. Only covers the Codex/Work meter.")
+    setup = ("Needs a Codex CLI login. Enable with: "
+             "aiquota set chatgpt autodiscover=true  (reads ~/.codex/auth.json), "
+             "or set AIQUOTA_CODEX_TOKEN. Covers the Codex/Work meter only.")
 
     def probe(self, conf: Dict[str, Any]) -> Result:
-        tok, acct = _auth(conf)
+        tok, acct, source = _auth(conf)
         if not tok:
+            if source == "needs_optin":
+                return self.make(
+                    conf, tier=UNCONFIGURED,
+                    note="Found a Codex login on this machine but did not use "
+                         "it. Reading another app's credentials is opt-in: "
+                         "aiquota set chatgpt autodiscover=true",
+                    error="credentials available but not authorised")
             return self.make(conf, tier=UNCONFIGURED, note=self.setup,
                              error="no Codex credentials found")
 
@@ -68,6 +87,7 @@ class ChatGPTAdapter(Adapter):
         code, d = get_json(URL, headers=hdr, timeout=25)
 
         r = self.make(conf, tier=LIVE, note="Codex/Work meter")
+        r.extra["credential_source"] = source
         if code != 200 or not isinstance(d, dict):
             r.tier = ERROR
             r.error = ("Codex token expired — run `codex login`" if code == 401

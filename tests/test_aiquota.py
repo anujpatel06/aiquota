@@ -295,6 +295,57 @@ class TestCLIShape(Base):
         self.assertEqual(code, 0)
 
 
+class TestCredentialConsent(Base):
+    """Reading another application's credential file must be opt-in.
+
+    Regression test for a real incident: the ChatGPT adapter silently found
+    ~/.codex/auth.json and sent that token to a remote endpoint without the
+    user ever configuring the service.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Simulate another app's login sitting on the machine.
+        self.fake_codex = os.path.join(self.home, "codex_auth.json")
+        with open(self.fake_codex, "w") as f:
+            json.dump({"tokens": {"access_token": "tok", "account_id": "acct"}}, f)
+        os.environ.pop("AIQUOTA_NO_AUTODISCOVER", None)
+
+    def test_does_not_borrow_credentials_by_default(self):
+        self.run_cli("add", "chatgpt")
+        self.run_cli("set", "chatgpt", f'auth_files=["{self.fake_codex}"]')
+        code, out, _ = self.run_cli("status", "chatgpt", "--json")
+        self.assertEqual(code, 0)
+        s = json.loads(out)["services"][0]
+        self.assertEqual(s["tier"], "unconfigured",
+                         "must NOT use another app's token without opt-in")
+        self.assertIn("opt-in", (s.get("note") or "").lower())
+
+    def test_opt_in_enables_discovery(self):
+        self.run_cli("add", "chatgpt")
+        self.run_cli("set", "chatgpt", f'auth_files=["{self.fake_codex}"]',
+                     "autodiscover=true")
+        from aiquota.adapters.chatgpt import _auth
+        tok, acct, source = _auth({"auth_files": [self.fake_codex],
+                                   "autodiscover": True})
+        self.assertEqual(tok, "tok")
+        self.assertIn("borrowed", source)
+
+    def test_claude_does_not_borrow_by_default(self):
+        from aiquota.adapters.claude import _token
+        self.assertIsNone(_token({}), "must not scan credential files by default")
+
+    def test_env_var_still_works_without_optin(self):
+        os.environ["AIQUOTA_CODEX_TOKEN"] = "explicit"
+        try:
+            from aiquota.adapters.chatgpt import _auth
+            tok, _, source = _auth({})
+            self.assertEqual(tok, "explicit")
+            self.assertEqual(source, "env")
+        finally:
+            os.environ.pop("AIQUOTA_CODEX_TOKEN", None)
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

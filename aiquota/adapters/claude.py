@@ -38,9 +38,12 @@ def _token(conf: Dict[str, Any]) -> Optional[str]:
         if os.environ.get(var):
             return os.environ[var]
 
-    # Scanning other apps' credential files is convenient but surprising.
-    # Allow opting out (also keeps test runs hermetic).
-    if os.environ.get("AIQUOTA_NO_AUTODISCOVER") or conf.get("no_autodiscover"):
+    # Reading ANOTHER application's credential file is opt-in. Explicit
+    # config/env above is fine — you set that deliberately. Silently borrowing
+    # Claude Code's or Hermes' OAuth token is not a safe default.
+    if os.environ.get("AIQUOTA_NO_AUTODISCOVER"):
+        return None
+    if not conf.get("autodiscover") and not conf.get("token_files"):
         return None
 
     for raw in conf.get("token_files") or [
