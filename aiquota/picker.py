@@ -30,16 +30,20 @@ class DialogError(RuntimeError):
 
 
 def osa(script: str) -> tuple:
-    """Run AppleScript frontmost. Returns (ok, stdout); ok=False on cancel.
+    """Run AppleScript through Finder. Returns (ok, stdout); ok=False on cancel.
 
-    Wrapped in `tell application "System Events"` + activate: launched from a
-    widget the process has no GUI focus, so an unwrapped dialog opens BEHIND
-    the user's windows and looks like nothing happened.
+    WHY FINDER: when osascript runs from a non-GUI process (a SwiftBar plugin,
+    an Übersicht `run()`, a background shell) it has no window-server access,
+    so `choose from list` and `display dialog` resolve INSTANTLY with a default
+    answer instead of showing anything — the button appears to do nothing.
+    Verified: bare, `tell System Events`, `tell me`, and `launchctl asuser` all
+    auto-answer. Addressing Finder, which always owns a GUI session, is what
+    actually puts a window on screen.
 
-    Raises DialogError for real failures (permissions, syntax, timeout) so
-    they are never silently misread as "the user cancelled".
+    Raises DialogError for real failures (permissions, syntax) so they are
+    never silently misread as "the user cancelled".
     """
-    wrapped = ('tell application "System Events"\n'
+    wrapped = ('tell application "Finder"\n'
                '  activate\n'
                f'  {script}\n'
                'end tell')
