@@ -25,12 +25,19 @@ except ImportError:
 TITLE = "aiquota"
 
 
+class DialogError(RuntimeError):
+    """A dialog failed for a reason that is NOT the user cancelling."""
+
+
 def osa(script: str) -> tuple:
-    """Run AppleScript, frontmost. Returns (ok, stdout); ok=False on cancel.
+    """Run AppleScript frontmost. Returns (ok, stdout); ok=False on cancel.
 
     Wrapped in `tell application "System Events"` + activate: launched from a
     widget the process has no GUI focus, so an unwrapped dialog opens BEHIND
     the user's windows and looks like nothing happened.
+
+    Raises DialogError for real failures (permissions, syntax, timeout) so
+    they are never silently misread as "the user cancelled".
     """
     wrapped = ('tell application "System Events"\n'
                '  activate\n'
@@ -38,7 +45,15 @@ def osa(script: str) -> tuple:
                'end tell')
     p = subprocess.run(["osascript", "-e", wrapped],
                        capture_output=True, text=True)
-    return p.returncode == 0, p.stdout.strip()
+    if p.returncode == 0:
+        return True, p.stdout.strip()
+
+    err = (p.stderr or "").strip()
+    # -128 is the documented "User canceled" code; osascript also emits the
+    # phrase for Cancel buttons. Everything else is a genuine error.
+    if "-128" in err or "User canceled" in err or "user cancelled" in err.lower():
+        return False, ""
+    raise DialogError(err or f"osascript exited {p.returncode}")
 
 
 def q(s: str) -> str:
@@ -84,6 +99,24 @@ BADGE = {"live": "●", "soon": "◐", "manual": "○"}
 
 
 def main():
+    try:
+        return _main()
+    except KeyboardInterrupt:
+        return 130
+    except DialogError as e:
+        msg = str(e)[:180]
+        print(f"aiquota-picker: dialog failed: {msg}", file=sys.stderr)
+        try:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{q(msg)}" with title "aiquota — error"'],
+                capture_output=True, text=True, timeout=10)
+        except Exception:
+            pass
+        return 1
+
+
+def _main():
     load_adapters()
     cfg = load_config()
     reg = registry()
@@ -209,3 +242,16 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
+    except DialogError as e:
+        # Never fail silently: a widget button that does nothing is the worst
+        # possible outcome. Report on stderr AND as a notification.
+        msg = str(e)[:180]
+        print(f"aiquota-picker: dialog failed: {msg}", file=sys.stderr)
+        try:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{q(msg)}" with title "aiquota — error"'],
+                capture_output=True, text=True, timeout=10)
+        except Exception:
+            pass
+        sys.exit(1)
