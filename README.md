@@ -37,7 +37,7 @@ Higgsfield  Creator  [manual]
 ```bash
 pip install aiquota          # once published
 # or from source:
-git clone https://github.com/USERNAME/aiquota && cd aiquota && pip install -e .
+git clone https://github.com/anujpatel06/aiquota && cd aiquota && pip install -e .
 ```
 
 Python 3.8+. No other requirements.

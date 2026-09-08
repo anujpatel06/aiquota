@@ -21,8 +21,8 @@ classifiers = [
 dependencies = []          # stdlib only, on purpose
 
 [project.urls]
-Homepage = "https://github.com/USERNAME/aiquota"
-Issues = "https://github.com/USERNAME/aiquota/issues"
+Homepage = "https://github.com/anujpatel06/aiquota"
+Issues = "https://github.com/anujpatel06/aiquota/issues"
 
 [project.scripts]
 aiquota = "aiquota.cli:main"
