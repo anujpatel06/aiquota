@@ -30,3 +30,6 @@ aiquota-picker = "aiquota.picker:main"
 
 [tool.setuptools.packages.find]
 include = ["aiquota*"]
+
+[tool.setuptools.package-data]
+aiquota = ["assets/*.json"]

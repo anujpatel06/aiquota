@@ -24,6 +24,7 @@ from typing import Any, Dict, List
 CATALOG: List[Dict[str, Any]] = [
     {
         "key": "claude",
+        "domain": "claude.ai",
         "name": "Claude",
         "vendor": "Anthropic",
         "adapter": "claude",
@@ -33,6 +34,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "chatgpt",
+        "domain": "openai.com",
         "name": "ChatGPT / Codex",
         "vendor": "OpenAI",
         "adapter": "chatgpt",
@@ -42,6 +44,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "cursor",
+        "domain": "cursor.com",
         "name": "Cursor",
         "vendor": "Anysphere",
         "adapter": "manual",
@@ -51,6 +54,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "copilot",
+        "domain": "github.com",
         "name": "GitHub Copilot",
         "vendor": "GitHub",
         "adapter": "copilot",
@@ -60,6 +64,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "gemini",
+        "domain": "gemini.google.com",
         "name": "Gemini",
         "vendor": "Google",
         "adapter": "manual",
@@ -69,6 +74,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "perplexity",
+        "domain": "perplexity.ai",
         "name": "Perplexity",
         "vendor": "Perplexity",
         "adapter": "manual",
@@ -78,6 +84,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "grok",
+        "domain": "x.ai",
         "name": "Grok",
         "vendor": "xAI",
         "adapter": "manual",
@@ -87,6 +94,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "midjourney",
+        "domain": "midjourney.com",
         "name": "Midjourney",
         "vendor": "Midjourney",
         "adapter": "manual",
@@ -96,6 +104,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "higgsfield",
+        "domain": "higgsfield.ai",
         "name": "Higgsfield",
         "vendor": "Higgsfield",
         "adapter": "manual",
@@ -105,6 +114,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "runway",
+        "domain": "runwayml.com",
         "name": "Runway",
         "vendor": "Runway",
         "adapter": "manual",
@@ -114,6 +124,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "elevenlabs",
+        "domain": "elevenlabs.io",
         "name": "ElevenLabs",
         "vendor": "ElevenLabs",
         "adapter": "elevenlabs",
@@ -123,6 +134,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "openrouter",
+        "domain": "openrouter.ai",
         "name": "OpenRouter",
         "vendor": "OpenRouter",
         "adapter": "openrouter",
@@ -132,6 +144,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "suno",
+        "domain": "suno.com",
         "name": "Suno",
         "vendor": "Suno",
         "adapter": "manual",
@@ -141,6 +154,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "v0",
+        "domain": "v0.app",
         "name": "v0",
         "vendor": "Vercel",
         "adapter": "manual",
@@ -150,6 +164,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "lovable",
+        "domain": "lovable.dev",
         "name": "Lovable",
         "vendor": "Lovable",
         "adapter": "manual",
@@ -159,6 +174,7 @@ CATALOG: List[Dict[str, Any]] = [
     },
     {
         "key": "replit",
+        "domain": "replit.com",
         "name": "Replit",
         "vendor": "Replit",
         "adapter": "manual",

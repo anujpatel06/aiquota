@@ -149,13 +149,41 @@ def _main():
     tracked = set(cfg.get("services", {}))
 
     entries = sorted_catalog()
+
+    # Rich HTML picker (logos + status pills). Falls back to the plain
+    # AppleScript list if anything about the GUI path fails.
+    picked_key = None
+    try:
+        from .guipick import choose_gui
+        picked_key = choose_gui(entries, tracked)
+        if picked_key is None:
+            return 0                      # cancelled
+    except Exception:
+        picked_key = None
+
+    if picked_key == "__other__":
+        name = ask("What service do you want to track?\n"
+                   "(e.g. NotebookLM, Ideogram, Krea)")
+        if not name:
+            return 0
+        key = name.lower().replace(" ", "-")
+        entry = {"adapter": "manual", "enabled": True,
+                 "service": name.strip().title()}
+        e = {"name": name.strip().title(),
+             "login": "wherever it shows your usage"}
+        return finish_manual(cfg, key, entry, e)
+
+    if picked_key:
+        e = by_key(picked_key)
+        if e:
+            return _handle_choice(cfg, reg, e)
+
+    # ---- fallback: plain AppleScript list --------------------------------
     labels, lookup = [], {}
     for e in entries:
         mark = BADGE.get(e["support"], "·")
         state = "  ✓ added" if e["key"] in tracked else ""
-        # Show what the user actually gets, right in the list.
-        kind = {"live": "live usage",
-                "soon": "manual for now",
+        kind = {"live": "live usage", "soon": "manual for now",
                 "manual": "manual entry"}.get(e["support"], "")
         label = f"{mark}  {e['name']}  —  {kind}{state}"
         labels.append(label)
@@ -168,7 +196,6 @@ def _main():
     if not picked:
         return 0
 
-    # --- "Something else": user names it -------------------------------
     if picked == other:
         name = ask("What service do you want to track?\n"
                    "(e.g. NotebookLM, Ideogram, Krea)")
@@ -180,7 +207,11 @@ def _main():
         e = {"name": name, "login": "wherever it shows your usage"}
         return finish_manual(cfg, key, entry, e)
 
-    e = lookup[picked]
+    return _handle_choice(cfg, reg, lookup[picked])
+
+
+def _handle_choice(cfg, reg, e):
+    """Route a chosen catalog entry to the right linking flow."""
     key = e["key"]
 
     # --- live platforms: look for a credential, then ASK ---------------
