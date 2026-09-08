@@ -182,6 +182,32 @@ class _H(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def _screen_size() -> tuple:
+    """Main display size, for centring the window. Falls back to 1440x900."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "Finder" to get bounds of window of desktop'],
+            capture_output=True, text=True, timeout=5).stdout.strip()
+        parts = [int(x.strip()) for x in out.split(",")]
+        if len(parts) == 4:
+            return parts[2] - parts[0], parts[3] - parts[1]
+    except Exception:
+        pass
+    return 1440, 900
+
+
+def _profile_dir() -> str:
+    """Persistent browser profile.
+
+    A fresh --user-data-dir on every open costs a full cold start and leaves
+    temp dirs behind. Reusing one directory makes the window appear at once.
+    """
+    d = os.path.join(os.path.expanduser("~"), ".cache", "aiquota", "browser")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
                timeout: int = 300) -> Optional[str]:
     """Show the HTML picker. Returns the chosen catalog key, or None."""
@@ -211,21 +237,51 @@ def choose_gui(entries: List[Dict[str, Any]], tracked=set(),
     srv = http.server.HTTPServer(("127.0.0.1", port), _H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
-    # A chromeless Chrome/Edge app window looks closest to a native sheet;
-    # fall back to the default browser when neither is installed.
-    size = "--window-size=460,600"
+    # Centre on the main display so it lands where the user is looking.
+    W, H = 460, 620
+    sw, sh = _screen_size()
+    x, y = max(0, (sw - W) // 2), max(0, (sh - H) // 3)
+
+    launched = False
     for browser in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
                     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"):
-        if os.path.exists(browser):
-            subprocess.Popen(
-                [browser, f"--app=file://{path}", size,
-                 "--user-data-dir=" + tempfile.mkdtemp(prefix="aiq_prof_")],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            break
-    else:
+        if not os.path.exists(browser):
+            continue
+        subprocess.Popen(
+            [browser,
+             f"--app=file://{path}",
+             f"--window-size={W},{H}",
+             f"--window-position={x},{y}",
+             f"--user-data-dir={_profile_dir()}",   # persistent = instant
+             "--no-first-run", "--no-default-browser-check",
+             "--disable-extensions", "--disable-background-networking",
+             "--disable-sync", "--disable-features=Translate,MediaRouter",
+             "--no-service-autorun", "--disable-default-apps"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        launched = True
+        break
+
+    if not launched:
         subprocess.Popen(["open", "-W", path],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Pull the new window to the front — launched from a menu-bar plugin the
+    # app window can otherwise open behind whatever the user is working in.
+    if launched:
+        def _front():
+            import time as _t
+            for _ in range(12):
+                _t.sleep(0.25)
+                r = subprocess.run(
+                    ["osascript", "-e",
+                     'tell application "System Events" to set frontmost of '
+                     '(first process whose name contains "Chrome" or name '
+                     'contains "Edge" or name contains "Brave") to true'],
+                    capture_output=True, text=True)
+                if r.returncode == 0:
+                    return
+        threading.Thread(target=_front, daemon=True).start()
 
     _H.done.wait(timeout=timeout)
     srv.shutdown()
