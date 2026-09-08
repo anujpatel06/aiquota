@@ -7,6 +7,10 @@ export const refreshFrequency = 300000; // 5 min — each refresh costs ~1 Haiku
 export const command =
   "PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH aiquota --json --ttl 240 2>/dev/null || echo '{}'";
 
+// Übersicht widgets are click-through by default: the container ignores the
+// mouse so you can still use your desktop. Interactive elements must opt back
+// in with `pointer-events: auto` — that's what makes the buttons below
+// clickable while the rest of the panel stays out of the way.
 export const className = `
   top: 40px;
   right: 40px;
@@ -59,18 +63,56 @@ export const className = `
   .cta {
     margin-top: 12px; padding-top: 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.07);
-    font-size: 11px; color: #58a6ff;
+    display: flex; gap: 8px; align-items: center;
   }
-  .cta code {
-    font-family: Menlo, monospace; font-size: 10.5px;
-    background: rgba(88, 166, 255, 0.1); padding: 1px 5px;
-    border-radius: 4px;
+  button {
+    pointer-events: auto;          /* opt back in — container is click-through */
+    cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 500;
+    color: #58a6ff;
+    background: rgba(88, 166, 255, 0.1);
+    border: 1px solid rgba(88, 166, 255, 0.28);
+    border-radius: 7px;
+    padding: 5px 11px;
+    transition: background .15s ease, border-color .15s ease;
   }
+  button:hover {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: rgba(88, 166, 255, 0.55);
+  }
+  button:active { transform: translateY(1px); }
+  button.ghost {
+    color: #8b949e;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  button.ghost:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .link-btn {
+    pointer-events: auto; cursor: pointer;
+    font-family: inherit; font-size: 10px; font-weight: 500;
+    color: #58a6ff; background: none; border: none;
+    padding: 2px 0; margin-top: 3px; text-align: left;
+  }
+  .link-btn:hover { text-decoration: underline; }
 `;
 
 const tone = (p) => (p >= 85 ? "#f85149" : p >= 60 ? "#d29922" : "#3fb950");
 const dotColor = (t) =>
   t === "live" ? "#3fb950" : t === "error" ? "#f85149" : "#6e7681";
+
+// Open Terminal running an aiquota command. Übersicht injects `run` into the
+// render scope; falling back to window.run keeps it working across versions.
+const openTerminal = (cmd) => {
+  const exec = typeof run === "function" ? run : window.run;
+  if (typeof exec !== "function") return;
+  const script =
+    `osascript -e 'tell application "Terminal" to do script ` +
+    `"${cmd}"' -e 'tell application "Terminal" to activate'`;
+  exec(script);
+};
 
 export const render = ({ output }) => {
   let data = {};
@@ -87,7 +129,9 @@ export const render = ({ output }) => {
         <h1>AI Quota</h1>
         <div className="empty">No accounts added yet</div>
         <div className="cta">
-          Run <code>aiquota link</code> to add one
+          <button onClick={() => openTerminal("aiquota link")}>
+            ＋ Add an AI account
+          </button>
         </div>
       </div>
     );
@@ -151,6 +195,15 @@ export const render = ({ output }) => {
               </div>
             ) : null}
 
+            {s.tier === "unconfigured" ? (
+              <button
+                className="link-btn"
+                onClick={() => openTerminal(`aiquota link ${s.name || ""}`)}
+              >
+                Link this account →
+              </button>
+            ) : null}
+
             {ex.credits !== undefined || ex.renews_in_days !== undefined ? (
               <div className="meta">
                 {ex.credits !== undefined ? `${ex.credits} credits` : ""}
@@ -167,7 +220,15 @@ export const render = ({ output }) => {
       })}
 
       <div className="cta">
-        ＋ Add another: <code>aiquota link</code>
+        <button onClick={() => openTerminal("aiquota link")}>
+          ＋ Add account
+        </button>
+        <button
+          className="ghost"
+          onClick={() => openTerminal("aiquota -r")}
+        >
+          Refresh
+        </button>
       </div>
     </div>
   );
