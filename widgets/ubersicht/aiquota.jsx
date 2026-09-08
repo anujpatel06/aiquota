@@ -326,7 +326,11 @@ export const render = ({ output }) => {
     return <div className="empty">Couldn’t read usage data</div>;
   }
 
-  const services = data.services || [];
+  // Only show LINKED services. Unlinked platforms live in the Add Account
+  // picker — a dead card taking up desktop space helps nobody.
+  const all = data.services || [];
+  const services = all.filter((s) => s.tier !== "unconfigured");
+  const hidden = all.length - services.length;
   const stamp = data.generated_at
     ? new Date(data.generated_at * 1000).toLocaleTimeString([], {
         hour: "numeric",
@@ -346,7 +350,7 @@ export const render = ({ output }) => {
     return (
       <div ref={makeDraggable}>
         {header}
-        <div className="empty">No accounts yet</div>
+        <div className="empty">No accounts linked yet</div>
         <div className="foot">
           <button className="primary" onClick={openPicker}>
             Add Account
@@ -407,12 +411,6 @@ export const render = ({ output }) => {
               </div>
             ) : null}
 
-            {s.tier === "unconfigured" ? (
-              <button className="linkbtn" onClick={openPicker}>
-                Connect →
-              </button>
-            ) : null}
-
             {ex.credits !== undefined || ex.renews_in_days !== undefined ? (
               <div className="note">
                 {ex.credits !== undefined ? `${ex.credits} credits` : ""}
@@ -435,6 +433,11 @@ export const render = ({ output }) => {
         <button onClick={() => shell("aiquota -r >/dev/null 2>&1")}>
           Refresh
         </button>
+        {hidden > 0 ? (
+          <span className="note" style={{ marginLeft: "auto", marginTop: 0 }}>
+            {hidden} not linked
+          </span>
+        ) : null}
       </div>
     </div>
   );

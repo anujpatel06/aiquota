@@ -26,7 +26,11 @@ def main():
         print(f"{type(e).__name__}: {e}")
         return
 
-    services = data.get("services", [])
+    # Only show LINKED services. Unlinked platforms belong in the Add Account
+    # picker, not as dead rows in the menu.
+    everything = data.get("services", [])
+    services = [s for s in everything if s.get("tier") != "unconfigured"]
+    hidden = len(everything) - len(services)
 
     # Menu bar shows the single most-consumed window across everything.
     worst, _who = -1.0, ""
@@ -44,6 +48,9 @@ def main():
         print("%s | color=%s" % (line, colour) if colour else line)
 
     print("---")
+
+    if not services:
+        print("No accounts linked | color=#8E8E93")
 
     for s in services:
         mark = TIER.get(s.get("tier"), "·")
@@ -72,14 +79,11 @@ def main():
             print("--renews in %sd | font=Menlo" % ex["renews_in_days"])
         if s.get("error"):
             print("--%s | color=red font=Menlo" % s["error"])
-        # Unlinked services get a one-click way to link, instead of a dead card.
-        if s.get("tier") == "unconfigured":
-            here = os.path.dirname(os.path.abspath(__file__))
-            print("--Link this account… | color=#58a6ff terminal=false "
-                  "refresh=true bash=%s"
-                  % os.path.join(here, "add_account.sh"))
 
     print("---")
+    if hidden:
+        print("%d platform%s not linked | color=#8E8E93"
+              % (hidden, "" if hidden == 1 else "s"))
     # CTA: opens a native macOS list of platforms (no terminal needed).
     # Delegates to add_account.sh so the SwiftBar param escaping stays simple.
     here = os.path.dirname(os.path.abspath(__file__))
