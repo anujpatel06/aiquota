@@ -103,15 +103,23 @@ const tone = (p) => (p >= 85 ? "#f85149" : p >= 60 ? "#d29922" : "#3fb950");
 const dotColor = (t) =>
   t === "live" ? "#3fb950" : t === "error" ? "#f85149" : "#6e7681";
 
-// Open Terminal running an aiquota command. Übersicht injects `run` into the
-// render scope; falling back to window.run keeps it working across versions.
-const openTerminal = (cmd) => {
+// Open the native platform picker (a real macOS list dialog).
+// Falls back to Terminal only if the picker binary isn't installed.
+const openPicker = () => {
   const exec = typeof run === "function" ? run : window.run;
   if (typeof exec !== "function") return;
-  const script =
-    `osascript -e 'tell application "Terminal" to do script ` +
-    `"${cmd}"' -e 'tell application "Terminal" to activate'`;
-  exec(script);
+  exec(
+    "PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH; " +
+      "command -v aiquota-picker >/dev/null && aiquota-picker || " +
+      "osascript -e 'tell application \"Terminal\" to do script \"aiquota link\"' " +
+      "-e 'tell application \"Terminal\" to activate'"
+  );
+};
+
+const runCmd = (cmd) => {
+  const exec = typeof run === "function" ? run : window.run;
+  if (typeof exec !== "function") return;
+  exec(`PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH; ${cmd}`);
 };
 
 export const render = ({ output }) => {
@@ -129,7 +137,7 @@ export const render = ({ output }) => {
         <h1>AI Quota</h1>
         <div className="empty">No accounts added yet</div>
         <div className="cta">
-          <button onClick={() => openTerminal("aiquota link")}>
+          <button onClick={openPicker}>
             ＋ Add an AI account
           </button>
         </div>
@@ -198,7 +206,7 @@ export const render = ({ output }) => {
             {s.tier === "unconfigured" ? (
               <button
                 className="link-btn"
-                onClick={() => openTerminal(`aiquota link ${s.name || ""}`)}
+                onClick={openPicker}
               >
                 Link this account →
               </button>
@@ -220,12 +228,12 @@ export const render = ({ output }) => {
       })}
 
       <div className="cta">
-        <button onClick={() => openTerminal("aiquota link")}>
+        <button onClick={openPicker}>
           ＋ Add account
         </button>
         <button
           className="ghost"
-          onClick={() => openTerminal("aiquota -r")}
+          onClick={() => runCmd("aiquota -r >/dev/null 2>&1")}
         >
           Refresh
         </button>

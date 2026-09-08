@@ -102,6 +102,44 @@ aiquota link cursor      # jump straight to one platform
 aiquota unlink chatgpt   # stop using the credential, keep the service
 ```
 
+## Adding accounts
+
+Click **＋ Add an AI account…** in the menu bar or desktop widget and a native
+macOS list appears with every supported platform:
+
+```
+●  ChatGPT / Codex  —  live usage  ✓ added
+●  Claude           —  live usage  ✓ added
+◐  Cursor           —  manual for now
+◐  ElevenLabs       —  manual for now
+◐  GitHub Copilot   —  manual for now
+◐  OpenRouter       —  manual for now
+○  Gemini           —  manual entry
+○  Grok             —  manual entry
+○  Higgsfield       —  manual entry
+○  Midjourney       —  manual entry
+○  Perplexity       —  manual entry
+○  Runway           —  manual entry
+○  Suno             —  manual entry
+○  v0 / Lovable / Replit …
+＋  Something else…
+```
+
+Pick one and it walks you through the rest. No terminal required — though
+`aiquota link` gives the same flow in the shell if you prefer.
+
+The badges say what you actually get:
+
+| Badge | Meaning |
+|---|---|
+| `● live` | Real usage, fetched once you link a credential |
+| `◐ manual for now` | An endpoint likely exists; no adapter yet — PRs welcome |
+| `○ manual` | No usage API; you enter the numbers |
+
+Most AI platforms publish no consumer usage API. Listing them as `manual` is
+deliberate — seeing everything you pay for in one place beats seeing only the
+two that can be automated.
+
 ## Usage
 
 ```bash

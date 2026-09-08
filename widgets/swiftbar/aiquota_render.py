@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """SwiftBar/xbar menu-bar renderer for aiquota."""
 import json
+import os
 import subprocess
 import sys
 
@@ -73,18 +74,18 @@ def main():
             print("--%s | color=red font=Menlo" % s["error"])
         # Unlinked services get a one-click way to link, instead of a dead card.
         if s.get("tier") == "unconfigured":
-            print("--Link this account… | color=#58a6ff bash=/usr/bin/osascript "
-                  "param1=-e param2='tell app \"Terminal\" to do script "
-                  "\"aiquota link %s\"' param3=-e param4='tell app \"Terminal\" "
-                  "to activate' terminal=false refresh=true" % s.get("name", ""))
+            here = os.path.dirname(os.path.abspath(__file__))
+            print("--Link this account… | color=#58a6ff terminal=false "
+                  "refresh=true bash=%s"
+                  % os.path.join(here, "add_account.sh"))
 
     print("---")
-    # The CTA: browse every known platform and add one. Opens Terminal so the
-    # picker is interactive and consent is always explicit.
-    print("＋ Add an AI account… | color=#58a6ff bash=/usr/bin/osascript "
-          "param1=-e param2='tell app \"Terminal\" to do script \"aiquota link\"' "
-          "param3=-e param4='tell app \"Terminal\" to activate' "
-          "terminal=false refresh=true")
+    # CTA: opens a native macOS list of platforms (no terminal needed).
+    # Delegates to add_account.sh so the SwiftBar param escaping stays simple.
+    here = os.path.dirname(os.path.abspath(__file__))
+    adder = os.path.join(here, "add_account.sh")
+    print("＋ Add an AI account… | color=#58a6ff terminal=false refresh=true "
+          "bash=%s" % adder)
     print("Refresh now | refresh=true")
     print("Open repo | href=https://github.com/anujpatel06/aiquota")
 
