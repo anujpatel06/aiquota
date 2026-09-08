@@ -210,14 +210,65 @@ def _main():
         notify(f"Linked {e['name']}")
         return 0
 
-    # --- API-key platforms: one paste, then live forever ---------------
+    # --- browser sign-in (OAuth) if the platform supports it -----------
     ad = reg.get(e["adapter"])
+    if ad is not None and getattr(ad, "oauth_login", None):
+        return finish_oauth(cfg, key, e, ad)
+
+    # --- API-key platforms: one paste, then live forever ---------------
     if ad is not None and getattr(ad, "api_key_label", None):
         return finish_api_key(cfg, key, e, ad)
 
     # --- manual platforms: the user supplies the numbers ---------------
     entry = {"adapter": "manual", "enabled": True, "service": e["name"]}
     return finish_manual(cfg, key, entry, e)
+
+
+def finish_oauth(cfg, key, e, ad):
+    """Open the platform's own login page in the browser. No key pasting."""
+    from . import oauth as oauth_mod
+
+    name = e["name"]
+    label = getattr(ad, "oauth_label", f"Sign in to {name}")
+    if not confirm(f"{label}\n\n"
+                   "Your browser will open so you can sign in on "
+                   f"{name}'s own site.\n"
+                   "aiquota never sees your password.",
+                   ok_label="Open browser"):
+        return 0
+
+    fn = getattr(oauth_mod, f"{ad.oauth_login}_login", None)
+    if fn is None:
+        confirm(f"No sign-in flow available for {name}.", ok_label="OK")
+        return 0
+
+    token, err = fn()
+    if err:
+        confirm(f"Sign-in failed.\n\n{err}\n\n{name} was not added.",
+                ok_label="OK")
+        return 0
+
+    probe = ad.probe({"api_key": token})
+    if probe.tier != "live":
+        confirm(f"Signed in, but the check failed.\n\n"
+                f"{probe.error or 'unknown error'}", ok_label="OK")
+        return 0
+
+    entry = cfg["services"].get(key, {})
+    entry.update({"adapter": ad.name, "enabled": True, "api_key": token,
+                  "auth": "oauth"})
+    cfg["services"][key] = entry
+    save_config(cfg)
+
+    detail = ""
+    if probe.windows:
+        w = probe.windows[0]
+        detail = f"\n\n{w.label}: {w.used_pct:.0f}% used"
+    elif probe.extra.get("spent"):
+        detail = f"\n\nSpent: {probe.extra['spent']}"
+    notify(f"Connected {name}")
+    confirm(f"✓ {name} connected.{detail}", ok_label="Done")
+    return 0
 
 
 def finish_api_key(cfg, key, e, ad):

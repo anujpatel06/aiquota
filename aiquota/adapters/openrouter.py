@@ -23,10 +23,13 @@ class OpenRouterAdapter(Adapter):
     name = "openrouter"
     service = "OpenRouter"
     summary = "Credit balance and spend (official API)"
-    setup = ("Needs an API key from openrouter.ai → Keys. "
-             "Set AIQUOTA_OPENROUTER_KEY or run `aiquota link openrouter`.")
+    setup = ("Sign in through your browser — run `aiquota link openrouter` "
+             "or click Add in the widget.")
     api_key_label = "OpenRouter API key"
     api_key_help = "openrouter.ai → Keys → create or copy a key"
+    # Browser sign-in (OAuth PKCE) — no key pasting needed.
+    oauth_login = "openrouter"
+    oauth_label = "Sign in with OpenRouter"
 
     def _key(self, conf: Dict[str, Any]):
         return (conf.get("api_key")
