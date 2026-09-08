@@ -26,8 +26,17 @@ TITLE = "aiquota"
 
 
 def osa(script: str) -> tuple:
-    """Run AppleScript. Returns (ok, stdout). ok=False when the user cancels."""
-    p = subprocess.run(["osascript", "-e", script],
+    """Run AppleScript, frontmost. Returns (ok, stdout); ok=False on cancel.
+
+    Wrapped in `tell application "System Events"` + activate: launched from a
+    widget the process has no GUI focus, so an unwrapped dialog opens BEHIND
+    the user's windows and looks like nothing happened.
+    """
+    wrapped = ('tell application "System Events"\n'
+               '  activate\n'
+               f'  {script}\n'
+               'end tell')
+    p = subprocess.run(["osascript", "-e", wrapped],
                        capture_output=True, text=True)
     return p.returncode == 0, p.stdout.strip()
 
