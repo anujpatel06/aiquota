@@ -614,6 +614,60 @@ class TestPickerForm(Base):
             sp.run = orig
 
 
+class TestIsLinked(Base):
+    """'added' must mean a credential exists — not merely a config entry.
+
+    Regression: the default config ships claude/chatgpt entries, so the picker
+    showed ChatGPT as 'added' when nothing had ever been linked.
+    """
+
+    def test_bare_config_entry_is_not_linked(self):
+        from aiquota.core import is_linked
+        self.assertFalse(is_linked({"adapter": "chatgpt", "enabled": True}))
+        self.assertFalse(is_linked({"adapter": "chatgpt", "enabled": True,
+                                    "plan": "ChatGPT"}))
+
+    def test_credentials_count_as_linked(self):
+        from aiquota.core import is_linked
+        for conf in (
+            {"adapter": "claude", "token_files": ["~/.hermes/.env::X"]},
+            {"adapter": "chatgpt", "autodiscover": True},
+            {"adapter": "openrouter", "api_key": "sk-x"},
+            {"adapter": "copilot", "token": "gho_x"},
+        ):
+            self.assertTrue(is_linked(conf), conf)
+
+    def test_empty_manual_is_not_linked(self):
+        from aiquota.core import is_linked
+        self.assertFalse(is_linked({"adapter": "manual", "service": "Suno"}))
+
+    def test_filled_manual_is_linked(self):
+        from aiquota.core import is_linked
+        self.assertTrue(is_linked({"adapter": "manual", "credits": 500}))
+        self.assertTrue(is_linked({"adapter": "manual",
+                                   "renews_on": "2026-10-01"}))
+
+    def test_linked_services_matches_reality(self):
+        from aiquota.core import linked_services, save_config, load_config
+        cfg = load_config()
+        cfg["services"] = {
+            "claude": {"adapter": "claude", "token_files": ["x"]},
+            "chatgpt": {"adapter": "chatgpt", "plan": "ChatGPT"},
+            "suno": {"adapter": "manual", "service": "Suno"},
+            "runway": {"adapter": "manual", "credits": 100},
+        }
+        save_config(cfg)
+        self.assertEqual(linked_services(), {"claude", "runway"})
+
+    def test_picker_added_flag_uses_linked(self):
+        """The picker's 'added' pill must not appear for unlinked services."""
+        from aiquota.core import save_config, load_config, linked_services
+        cfg = load_config()
+        cfg["services"] = {"chatgpt": {"adapter": "chatgpt", "plan": "ChatGPT"}}
+        save_config(cfg)
+        self.assertNotIn("chatgpt", linked_services())
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

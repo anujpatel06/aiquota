@@ -198,6 +198,37 @@ def save_config(cfg: dict) -> None:
         pass
 
 
+def is_linked(conf: Dict[str, Any]) -> bool:
+    """True only when a service actually has something to read.
+
+    Merely appearing in config.json does NOT count — the default config ships
+    entries for claude/chatgpt, and treating those as "added" told users an
+    account was connected when nothing had been linked.
+
+    Linked means one of:
+      • a credential: api_key / token / token_files / autodiscover
+      • a manual entry the user actually filled in
+    """
+    if not isinstance(conf, dict):
+        return False
+    for k in ("api_key", "token", "token_files", "auth_files"):
+        if conf.get(k):
+            return True
+    if conf.get("autodiscover"):
+        return True
+    if conf.get("adapter") == "manual":
+        return any(conf.get(k) not in (None, "")
+                   for k in ("credits", "credits_total", "used",
+                             "limit", "renews_on"))
+    return False
+
+
+def linked_services(cfg: Optional[dict] = None) -> set:
+    """Keys of services that are genuinely linked."""
+    cfg = cfg if cfg is not None else load_config()
+    return {k for k, v in (cfg.get("services") or {}).items() if is_linked(v)}
+
+
 # --------------------------------------------------------------- cache
 
 def _read_cache() -> dict:

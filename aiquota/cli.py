@@ -284,9 +284,12 @@ def cmd_list(a) -> int:
         print("nothing tracked yet — try: aiquota add claude")
         return 0
     print(C.bold(f"Tracked services  {C.dim(config_path())}\n"))
+    from .core import is_linked
     for name, s in cfg["services"].items():
         state = "" if s.get("enabled", True) else C.dim("  (disabled)")
-        print(f"  {C.cyan(name):<20} adapter={s.get('adapter', name)}{state}")
+        link = (C.green("  linked") if is_linked(s)
+                else C.yellow("  not linked"))
+        print(f"  {C.cyan(name):<20} adapter={s.get('adapter', name)}{link}{state}")
     return 0
 
 
@@ -301,7 +304,9 @@ def cmd_link(a) -> int:
     load_adapters()
     cfg = load_config()
     reg = registry()
-    tracked = set(cfg.get("services", {}))
+    # "tracked" must mean genuinely LINKED — a bare config entry is not.
+    from .core import linked_services
+    tracked = linked_services(cfg)
 
     entries = sorted_catalog()
     if getattr(a, "name", None):

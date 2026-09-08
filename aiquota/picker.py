@@ -16,11 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from aiquota.catalog import sorted_catalog, by_key
-    from aiquota.core import load_config, save_config, load_adapters, registry
+    from aiquota.core import (load_config, save_config, load_adapters,
+                              registry, linked_services)
 except ImportError:
     # Installed as a console script — the package is on sys.path already.
     from aiquota.catalog import sorted_catalog, by_key
-    from aiquota.core import load_config, save_config, load_adapters, registry
+    from aiquota.core import (load_config, save_config, load_adapters,
+                              registry, linked_services)
 
 TITLE = "aiquota"
 
@@ -146,7 +148,8 @@ def _main():
     load_adapters()
     cfg = load_config()
     reg = registry()
-    tracked = set(cfg.get("services", {}))
+    # 'added' must mean genuinely LINKED — a bare config entry is not.
+    tracked = linked_services(cfg)
 
     entries = sorted_catalog()
 
