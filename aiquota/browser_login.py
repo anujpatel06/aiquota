@@ -234,11 +234,17 @@ class LoginWindow:
 
 def login_and_capture(url: str, domains: List[str], want: List[str],
                       timeout: int = 300,
+                      settle: float = 1.5,
                       on_wait=None) -> Dict[str, str]:
     """Open `url`, wait for the user to sign in, return the wanted cookies.
 
     Blocks until every name in `want` is present, the user closes the window,
     or `timeout` elapses. Returns {} if the user gave up — never partial junk.
+
+    A session cookie can appear part-way through a multi-step login (SSO
+    bounce, MFA), so once the cookies show up we wait `settle` seconds and
+    re-read them, taking the later values. Closing the window the moment a
+    name first appears can capture a half-finished session.
     """
     win = LoginWindow(url)
     try:
@@ -250,6 +256,11 @@ def login_and_capture(url: str, domains: List[str], want: List[str],
                 return {}
             jar = win.cookies_for(domains)
             if all(k in jar for k in want):
+                time.sleep(settle)
+                if win.alive():
+                    later = win.cookies_for(domains)
+                    if all(k in later for k in want):
+                        jar = later
                 return {k: jar[k] for k in want}
             if on_wait and not notified:
                 on_wait()

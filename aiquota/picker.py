@@ -222,10 +222,20 @@ def _main():
 def _handle_choice(cfg, reg, e):
     """Route a chosen catalog entry to the right linking flow."""
     key = e["key"]
+    ad = reg.get(e["adapter"])
+
+    # --- sign in with your own account, in a real browser window -------
+    # FIRST, before looking for local credentials. A platform we can sign
+    # into should open its login page, not report that nothing was found on
+    # this Mac — "set it up elsewhere, then come back" is a dead end when we
+    # are perfectly able to do it here. Gated by login_policy, because some
+    # providers restrict third-party sign-in.
+    if (ad is not None and getattr(ad, "browser_login", None)
+            and may_browser_login(key)):
+        return finish_browser_login(cfg, key, e, ad)
 
     # --- live platforms: look for a credential, then ASK ---------------
     if e["support"] == "live":
-        ad = reg.get(e["adapter"])
         found = []
         if ad:
             try:
@@ -253,16 +263,6 @@ def _handle_choice(cfg, reg, e):
         save_config(cfg)
         notify(f"Linked {e['name']}")
         return 0
-
-    # --- sign in with your own account, in a real browser window -------
-    # Preferred path where the provider permits it. Gated by login_policy:
-    # some providers (Anthropic) restrict OAuth to their own apps and have
-    # banned accounts over third-party sign-in, so this is a per-platform
-    # policy decision, not a UI preference.
-    ad = reg.get(e["adapter"])
-    if (ad is not None and getattr(ad, "browser_login", None)
-            and may_browser_login(key)):
-        return finish_browser_login(cfg, key, e, ad)
 
     # --- browser sign-in (OAuth) if the platform supports it -----------
     if ad is not None and getattr(ad, "oauth_login", None):
@@ -297,10 +297,11 @@ def _handle_choice(cfg, reg, e):
 
 
 def finish_browser_login(cfg, key, e, ad):
-    """Sign in on the platform's own site, in a window aiquota opens.
+    """Open the platform's login page and wait for the sign-in to land.
 
-    The user chooses the account — any email they like. We never see the
-    password; we read the resulting session out of the window afterwards.
+    Modelled on a normal "Sign in with…" flow: the window opens immediately
+    on the provider's own page. No dialog beforehand asking permission to do
+    the thing the user just clicked — choosing the platform IS the consent.
     """
     from .browser_login import login_and_capture, find_browser, LoginError
 
@@ -312,15 +313,7 @@ def finish_browser_login(cfg, key, e, ad):
         return 0
 
     spec = ad.browser_login  # {"url", "domains", "want", "label"?}
-    label = spec.get("label") or f"Sign in to {name}"
-    if not confirm(
-            f"{label}\n\n"
-            f"A window will open on {name}'s own website.\n"
-            "Sign in with whichever account you want to track — aiquota "
-            "never sees your password.\n\n"
-            "The window closes by itself once you're signed in.",
-            ok_label="Open sign-in"):
-        return 0
+    notify(f"Opening {name} sign-in…")
 
     try:
         jar = login_and_capture(spec["url"], spec["domains"], spec["want"],
@@ -331,8 +324,10 @@ def finish_browser_login(cfg, key, e, ad):
         return 1
 
     if not jar:
-        # Closed the window, or never finished signing in. Add nothing.
-        notify(f"{name} was not added — sign-in wasn't completed")
+        # Window closed, or sign-in never completed. Add nothing.
+        confirm(f"{name} wasn't added.\n\n"
+                "The sign-in window closed before you finished signing in.\n\n"
+                "Try again whenever you like.", ok_label="OK")
         return 0
 
     entry = {"adapter": ad.name, "enabled": True, "service": name,
@@ -344,8 +339,8 @@ def finish_browser_login(cfg, key, e, ad):
         probe = ad.probe(dict(entry, _key=key))
         if getattr(probe, "tier", None) == "error":
             confirm(f"Signed in, but {name} didn't return usage data.\n\n"
-                    f"{getattr(probe, 'note', '') or ''}\n\n"
-                    "Nothing was saved.", ok_label="OK")
+                    f"{getattr(probe, 'note', '') or getattr(probe, 'error', '') or ''}"
+                    "\n\nNothing was saved.", ok_label="OK")
             return 1
     except Exception as exc:
         confirm(f"Signed in, but reading {name} usage failed.\n\n{exc}\n\n"

@@ -917,6 +917,74 @@ class TestStaleEntries(Base):
         self.assertFalse(is_linked({"adapter": "cursor", "session": {}}))
 
 
+class TestPickerRouting(Base):
+    """Choosing a sign-in platform must OPEN the login page.
+
+    Regression: picking Cursor showed "No Cursor credential found on this
+    Mac — set it up first, then open this again". That is a dead end when
+    aiquota can perfectly well open the login page itself. The credential
+    scan ran before the browser-login branch and returned early.
+    """
+
+    def test_browser_platform_goes_to_sign_in_not_a_dead_end(self):
+        from aiquota import picker
+        from aiquota.core import load_adapters, registry
+        from aiquota.catalog import by_key
+        load_adapters()
+        called = {}
+
+        def fake_login(cfg, key, e, ad):
+            called["key"] = key
+            return 0
+
+        # confirm() must NOT be reached — that is the dead-end dialog.
+        def boom(*a, **k):
+            raise AssertionError("showed a dialog instead of signing in")
+
+        with mock.patch.object(picker, "finish_browser_login", fake_login), \
+             mock.patch.object(picker, "confirm", boom):
+            picker._handle_choice({"services": {}}, registry(),
+                                  by_key("cursor"))
+        self.assertEqual(called.get("key"), "cursor")
+
+    def test_policy_blocked_platform_does_not_open_a_login_window(self):
+        """Claude must never reach the browser flow."""
+        from aiquota import picker
+        from aiquota.core import load_adapters, registry
+        from aiquota.catalog import by_key
+        load_adapters()
+
+        def boom(*a, **k):
+            raise AssertionError("opened a login window for Claude")
+
+        with mock.patch.object(picker, "finish_browser_login", boom), \
+             mock.patch.object(picker, "confirm", lambda *a, **k: False), \
+             mock.patch.object(picker, "ask", lambda *a, **k: ""):
+            picker._handle_choice({"services": {}}, registry(),
+                                  by_key("claude"))
+
+    def test_every_browser_platform_has_a_reachable_login_url(self):
+        from aiquota.core import load_adapters, registry
+        from aiquota.login_policy import LOGIN_POLICY
+        load_adapters()
+        reg = registry()
+        for key, (policy, _why, _src) in LOGIN_POLICY.items():
+            if policy != "browser":
+                continue
+            ad = reg.get(key)
+            if ad is None:
+                continue
+            spec = getattr(ad, "browser_login", None)
+            if spec is None:
+                # OAuth-style platforms (OpenRouter) redirect via PKCE
+                # instead of capturing a session cookie.
+                self.assertTrue(getattr(ad, "oauth_login", None),
+                                f"{key}: no way to sign in at all")
+                continue
+            self.assertTrue(spec["url"].startswith("https://"), key)
+            self.assertTrue(spec["domains"], f"{key}: no cookie domain")
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html
