@@ -23,6 +23,7 @@ dependencies = []          # stdlib only, on purpose
 [project.urls]
 Homepage = "https://github.com/anujpatel06/aiquota"
 Issues = "https://github.com/anujpatel06/aiquota/issues"
+Changelog = "https://github.com/anujpatel06/aiquota/blob/main/CHANGELOG.md"
 
 [project.scripts]
 aiquota = "aiquota.cli:main"
