@@ -1044,6 +1044,25 @@ class TestRemoveUI(Base):
             remove_ui.main(["claude", "--yes"])
         c.assert_not_called()
 
+    def test_removal_refreshes_the_widget(self):
+        """A removed card must not linger until the next 5-minute tick."""
+        from aiquota import remove_ui
+        self._cfg_with("claude")
+        with mock.patch.object(remove_ui, "confirm", return_value=True), \
+             mock.patch.object(remove_ui, "notify"), \
+             mock.patch.object(remove_ui, "_refresh_widgets") as refresh:
+            remove_ui.remove("claude")
+        refresh.assert_called_once()
+
+    def test_declining_does_not_refresh(self):
+        from aiquota import remove_ui
+        self._cfg_with("claude")
+        with mock.patch.object(remove_ui, "confirm", return_value=False), \
+             mock.patch.object(remove_ui, "notify"), \
+             mock.patch.object(remove_ui, "_refresh_widgets") as refresh:
+            remove_ui.remove("claude")
+        refresh.assert_not_called()
+
     def test_widget_passes_one_plain_argument(self):
         """The JSX must not rebuild nested AppleScript."""
         import pathlib

@@ -413,12 +413,17 @@ const openPicker = () =>
 // three layers of escaping, and the quoting collapsed before osascript ever
 // saw it ("display dialog Remove claude from aiquota?" — quotes gone). One
 // plain argument to one binary has nothing to mis-escape.
-const removeService = (name) =>
-  shell(
-    `aiquota-remove ${JSON.stringify(String(name))} && ` +
-      // Clear the TTL cache so the removed card can't be redrawn from it.
-      "aiquota -r >/dev/null 2>&1"
-  );
+const removeService = (name, el) => {
+  const key = String(name);
+  // aiquota-remove nudges Übersicht to reload once it has actually deleted
+  // something, so nothing here needs to guess the outcome. Just dim the card
+  // while the modal is up; the reload draws the truth either way.
+  shell(`aiquota-remove ${JSON.stringify(key)}`);
+  if (el && el.style) {
+    el.style.opacity = "0.4";
+    el.style.pointerEvents = "none";
+  }
+};
 
 export const render = ({ output }) => {
   let data = {};
@@ -501,7 +506,9 @@ export const render = ({ output }) => {
               <button
                 className="del"
                 title={`Remove ${s.service}`}
-                onClick={() => removeService(s.name)}
+                onClick={(ev) =>
+                  removeService(s.name, ev.currentTarget.closest(".svc"))
+                }
               >
                 ×
               </button>

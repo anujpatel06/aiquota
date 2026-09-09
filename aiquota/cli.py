@@ -244,6 +244,13 @@ def cmd_remove(a) -> int:
         _write_cache(c)
     except Exception:
         pass
+
+    # Nudge the widgets so a removed card doesn't linger until the next tick.
+    try:
+        from .remove_ui import _refresh_widgets
+        _refresh_widgets()
+    except Exception:
+        pass
     return 0
 
 

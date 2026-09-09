@@ -14,6 +14,7 @@ uses successfully.
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from .core import load_config, save_config
@@ -49,8 +50,33 @@ def remove(name: str, ask: bool = True) -> int:
     except Exception:
         pass
 
+    _refresh_widgets()
     notify(f"Removed {label}")
     return 0
+
+
+def _refresh_widgets() -> None:
+    """Make the desktop widget redraw now instead of at its next tick.
+
+    Übersicht re-runs a widget's `command` on `refreshFrequency` — five
+    minutes here. Without a nudge the card you just deleted sits on screen
+    until then, which reads as "remove is broken". Touching the .jsx makes
+    Übersicht reload it immediately; SwiftBar reloads via its URL scheme.
+    """
+    import subprocess
+    jsx = os.path.expanduser(
+        "~/Library/Application Support/Übersicht/widgets/aiquota.jsx")
+    if os.path.exists(jsx):
+        try:
+            os.utime(jsx, None)
+        except OSError:
+            pass
+    try:
+        subprocess.run(["open", "-g", "swiftbar://refreshallplugins"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=5)
+    except Exception:
+        pass
 
 
 def main(argv=None) -> int:
