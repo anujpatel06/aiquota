@@ -1197,6 +1197,49 @@ class TestBrowserReadAdapters(Base):
         self.assertEqual(r.tier, "error")
 
 
+class TestGuiDialog(Base):
+    """Dialogs match the widget's design and never answer themselves."""
+
+    def test_message_splits_into_heading_and_body(self):
+        from aiquota.picker import _as_html
+        head, body = _as_html(
+            "Link ChatGPT / Codex?\n\n"
+            "aiquota will read:\n~/.codex/auth.json\n\n"
+            "Codex CLI login, last refreshed 2026-09-07")
+        self.assertEqual(head, "Link ChatGPT / Codex?")
+        self.assertIn("~/.codex/auth.json", body)
+        self.assertIn("<code>", body, "a path should render as a detail row")
+
+    def test_html_is_escaped(self):
+        from aiquota.picker import _as_html
+        _head, body = _as_html("Title\n\n<script>alert(1)</script>")
+        self.assertNotIn("<script>", body)
+        self.assertIn("&lt;script&gt;", body)
+
+    def test_timeout_is_distinguishable_from_cancel(self):
+        """A dialog nobody answered must not read as a deliberate Cancel."""
+        from aiquota import guidialog
+        with mock.patch.object(guidialog.os.path, "exists",
+                               return_value=False):
+            self.assertIsNone(guidialog.show("t", "<p>x</p>"),
+                              "no browser must return None, not a cancel")
+
+    def test_rows_renders_pairs(self):
+        from aiquota.guidialog import rows
+        html = rows([("Account", "abc123"), ("Updated", "2026-09-07")])
+        self.assertIn("Account", html)
+        self.assertIn("abc123", html)
+        self.assertEqual(html.count('class="row"'), 2)
+
+    def test_confirm_falls_back_when_no_window(self):
+        """With no browser, confirm() must still work via AppleScript."""
+        from aiquota import picker
+        with mock.patch.object(picker.guidialog, "show", return_value=None), \
+             mock.patch.object(picker, "osa", return_value=(True, "")) as osa:
+            self.assertTrue(picker.confirm("Question?", ok_label="Go"))
+        osa.assert_called_once()
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

@@ -19,12 +19,14 @@ try:
     from aiquota.core import (load_config, save_config, load_adapters,
                               registry, linked_services)
     from aiquota.login_policy import may_browser_login, policy_for
+    from aiquota import guidialog
 except ImportError:
     # Installed as a console script — the package is on sys.path already.
     from aiquota.catalog import sorted_catalog, by_key
     from aiquota.core import (load_config, save_config, load_adapters,
                               registry, linked_services)
     from aiquota.login_policy import may_browser_login, policy_for
+    from aiquota import guidialog
 
 TITLE = "aiquota"
 
@@ -80,7 +82,43 @@ def choose(prompt: str, items, title=TITLE, default=None):
     return out
 
 
+def _html_escape(s: str) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
+def _as_html(msg: str) -> tuple:
+    """Split a plain message into (title, body-html).
+
+    The AppleScript dialogs put everything in one blob of text. The first
+    line is almost always the actual question, so it becomes the heading and
+    the rest becomes body copy — the same hierarchy the widget uses.
+    """
+    parts = [p for p in str(msg).split("\n\n")]
+    head = parts[0].strip()
+    rest = parts[1:]
+    body = []
+    for para in rest:
+        para = para.strip()
+        if not para:
+            continue
+        # A "Label:\nvalue" paragraph reads better as a detail row.
+        if "\n" in para and para.split("\n", 1)[0].rstrip().endswith(":"):
+            k, v = para.split("\n", 1)
+            body.append(guidialog.rows(
+                [(_html_escape(k.rstrip(": ")), f"<code>{_html_escape(v)}</code>")]))
+        else:
+            body.append(f"<p>{_html_escape(para)}</p>")
+    return head, "".join(body)
+
+
 def ask(prompt: str, default="", title=TITLE, hidden=False):
+    if not hidden:
+        head, body = _as_html(prompt)
+        r = guidialog.show(head, body, ok="OK", cancel="Cancel", field=True,
+                           height=300)
+        if r is not None:
+            return r["text"] if r["ok"] else None
     hid = " with hidden answer" if hidden else ""
     ok, out = osa(
         f'display dialog "{q(prompt)}" default answer "{q(default)}" '
@@ -114,10 +152,22 @@ def ask_form(title, prompt, fields):
     return out
 
 
-def confirm(msg: str, ok_label="OK", title=TITLE):
+def confirm(msg: str, ok_label="OK", title=TITLE, logo_key="",
+            danger=False):
+    head, body = _as_html(msg)
+    # A single-button dialog is an acknowledgement, not a choice — don't
+    # offer Cancel for those.
+    show_cancel = "Cancel" if ok_label not in ("OK",) else None
+    r = guidialog.show(head, body, ok=ok_label, cancel=show_cancel,
+                       logo_key=logo_key, danger=danger,
+                       height=300 if body else 240)
+    if r is not None:
+        return r["ok"]
+    buttons = (f'{{"Cancel", "{q(ok_label)}"}}' if show_cancel
+               else f'{{"{q(ok_label)}"}}')
     ok, _ = osa(
         f'display dialog "{q(msg)}" with title "{q(title)}" '
-        f'buttons {{"Cancel", "{q(ok_label)}"}} default button "{q(ok_label)}"')
+        f'buttons {buttons} default button "{q(ok_label)}"')
     return ok
 
 
@@ -245,7 +295,7 @@ def _handle_choice(cfg, reg, e):
         if not found:
             confirm(f"No {e['name']} credential found on this Mac.\n\n"
                     f"Set it up first:\n{e['login']}\n\n"
-                    "Then open this again.", ok_label="OK")
+                    "Then open this again.", ok_label="OK", logo_key=key)
             return 0
         # Let the user pick WHICH account, when more than one is on the Mac.
         # Using found[0] silently is the same "don't assume" mistake as
@@ -262,7 +312,8 @@ def _handle_choice(cfg, reg, e):
         cost = f"\n\nNote: {ad.cost_note}" if ad and ad.cost_note else ""
         if not confirm(f"Link {e['name']}?\n\n"
                        f"aiquota will read:\n{f['source']}\n\n"
-                       f"{f['detail']}{cost}", ok_label="Link"):
+                       f"{f['detail']}{cost}", ok_label="Link",
+                       logo_key=key):
             return 0
         entry = cfg["services"].get(key, {})
         entry.update({"adapter": e["adapter"], "enabled": True})

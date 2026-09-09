@@ -33,7 +33,7 @@ def remove(name: str, ask: bool = True) -> int:
                            "Its usage card disappears from the widget. "
                            "Nothing is changed on the provider's side, and "
                            "you can add it again at any time.",
-                           ok_label="Remove"):
+                           ok_label="Remove", logo_key=name, danger=True):
         return 0
 
     del services[name]
