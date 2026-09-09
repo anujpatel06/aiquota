@@ -188,6 +188,8 @@ class ChatGPTAdapter(Adapter):
         code, d = get_json(URL, headers=hdr, timeout=25)
 
         r = self.make(conf, tier=LIVE, note="Codex/Work meter")
+        # Providers report a percentage, not counts.
+        r.confidence = "percent_only"
         r.extra["credential_source"] = source
         if code != 200 or not isinstance(d, dict):
             r.tier = ERROR

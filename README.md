@@ -374,6 +374,26 @@ python3 -m unittest discover -s tests -v    # 31 tests, no network, ~0.2s
 
 Tests set `AIQUOTA_NO_AUTODISCOVER=1` so they never pick up real credentials.
 
+## Prior art
+
+[CodexBar](https://github.com/steipete/CodexBar) (MIT) is the most complete
+tool in this space — 69 providers, native Swift, a plugin runtime. Three of
+its ideas are in aiquota, adapted rather than copied:
+
+- **Adaptive refresh.** Its `AdaptiveRefreshPolicyCore` widens the poll
+  interval as attention fades. aiquota mirrors the shape of that table.
+- **Structured failures.** Its plugin API makes every failure a typed reason
+  rather than a string, so the UI can offer a fix.
+- **Confidence, separate from source.** Its `dataConfidence` field says how
+  precise a number is, independent of where it came from.
+
+CodexBar's tagline is "every AI **coding** limit". aiquota covers creative
+and consumer subscriptions too, and names the providers it refuses to read.
+
+Also worth knowing: [ccusage](https://github.com/ccusage/ccusage) for Claude
+Code cost history, and [openusage](https://github.com/robinebers/openusage)
+for a native menu bar with a local HTTP API.
+
 ## License
 
 MIT

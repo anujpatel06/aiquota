@@ -160,6 +160,8 @@ class ClaudeAdapter(Adapter):
             "Authorization": f"Bearer {tok}",
             "anthropic-beta": BETA, "anthropic-version": "2023-06-01"})
         r = self.make(conf, tier=LIVE)
+        # Providers report a percentage, not counts.
+        r.confidence = "percent_only"
         r.extra["source"] = "oauth_usage"
         if code != 200 or not isinstance(d, dict):
             r.tier = ERROR

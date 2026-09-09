@@ -11,7 +11,7 @@ import os
 import pkgutil
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Optional
 
 APP_NAME = "aiquota"
@@ -69,6 +69,19 @@ class Result:
     note: str = ""
     error: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
+    # How much the number can be trusted, independent of whether it's live.
+    # A live reading can still be percent-only (the provider reports 43% but
+    # not 43-of-100), and a card should be able to say so rather than imply
+    # a precision it doesn't have.
+    #   exact        provider gave real counts
+    #   percent_only provider gave a percentage with no underlying totals
+    #   estimated    derived, not stated by the provider
+    #   unknown      not established
+    confidence: str = "unknown"
+    # Structured failure reason (aiquota.failures.Failure.kind) when tier is
+    # error — lets the UI show a fix-it hint instead of a raw status code.
+    failure_kind: str = ""
+    failure_hint: str = ""
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -79,7 +92,12 @@ class Result:
     def from_dict(d: dict) -> "Result":
         d = dict(d)
         d["windows"] = [Window(**w) for w in d.get("windows", [])]
-        return Result(**d)
+        # Tolerate caches written by older versions that lack these fields.
+        for k, default in (("confidence", "unknown"), ("failure_kind", ""),
+                           ("failure_hint", "")):
+            d.setdefault(k, default)
+        known = {f.name for f in fields(Result)}
+        return Result(**{k: v for k, v in d.items() if k in known})
 
 
 class Adapter:

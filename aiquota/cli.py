@@ -624,7 +624,45 @@ def build_parser() -> argparse.ArgumentParser:
     iw.add_argument("which", nargs="?", choices=["menubar", "desktop"],
                     help="default: both")
     iw.set_defaults(fn=cmd_install_widget)
+
+    rf = sub.add_parser("refresh", parents=[common],
+                        help="how often aiquota re-checks, and why")
+    rf.set_defaults(fn=cmd_refresh)
     return p
+
+
+def cmd_refresh(a) -> int:
+    """Explain the adaptive refresh decision.
+
+    Widgets call this to decide their own cadence, so it prints machine-
+    readable output with --json as well as the human explanation.
+    """
+    import json as _json
+
+    from . import refresh as rf
+    from .core import config_dir
+
+    seen_path = os.path.join(config_dir(), "last-seen")
+    seen = rf.last_seen(seen_path)
+    d = rf.decide(last_seen_at=seen)
+
+    if getattr(a, "json", False):
+        print(_json.dumps({"delay_seconds": d.delay, "reason": d.reason}))
+        return 0
+
+    print(f"{C.bold('Refresh')}: {d.human}")
+    if seen is None:
+        print("  Nobody has opened the widget yet this install.")
+    else:
+        mins = int((time.time() - seen) // 60)
+        print(f"  Last looked at: {mins} min ago")
+    if d.reason == "constrained":
+        print("  Low Power Mode is on — backing off to save battery.")
+    print()
+    print("  Polling a provider every minute while you're asleep is rude to")
+    print("  them and drains your battery. The interval widens as you stop")
+    print("  looking, and snaps back to 2 min the moment you open the widget.")
+    return 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -633,7 +671,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     KNOWN = {"status", "add", "remove", "rm", "enable", "disable",
              "set", "list", "adapters", "doctor", "link", "unlink",
-             "install-widget"}
+             "install-widget", "refresh"}
     HELP = {"-h", "--help", "--version"}
 
     # `aiquota`, `aiquota --color always`, `aiquota claude` all mean "status".

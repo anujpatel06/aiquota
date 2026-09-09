@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from .. import failures
 from ..core import ERROR, LIVE, UNCONFIGURED, Adapter, Result, Window, register
 from ._http import fmt_reset, get_json
 
@@ -50,13 +51,16 @@ class KeyBalanceAdapter(Adapter):
             return self.make(conf, tier=UNCONFIGURED, note=self.setup,
                              error="no API key")
         code, data = get_json(self.usage_url, headers=self._headers(str(key)))
-        if code in (401, 403):
-            r = self.make(conf, tier=ERROR)
-            r.error = "key rejected — check it hasn't been revoked"
-            return r
         if code != 200 or not isinstance(data, dict):
+            f = failures.classify_http(self.service, code)
+            if code in (401, 403):
+                f = failures.auth_expired(
+                    self.service, f"Create a new key at {self.api_key_help}.")
+            elif code == 200:
+                f = failures.parse_failure(self.service, "expected a JSON object")
             r = self.make(conf, tier=ERROR)
-            r.error = f"HTTP {code}"
+            r.error = f.message
+            r.failure_kind, r.failure_hint = f.kind, f.hint
             return r
         return self.parse(conf, data)
 
@@ -83,6 +87,7 @@ class DeepSeekAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         infos = d.get("balance_infos") or []
         if not infos:
             r.tier, r.error = ERROR, "no balance in response"
@@ -112,6 +117,7 @@ class PoeAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         pts = self._num(d.get("current_point_balance"))
         if pts is None:
             r.tier, r.error = ERROR, "no current_point_balance"
@@ -137,6 +143,7 @@ class FalAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         credits = d.get("credits")
         bal = None
         if isinstance(credits, dict):
@@ -164,6 +171,7 @@ class HeyGenAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         data = d.get("data") if isinstance(d.get("data"), dict) else d
         rem = self._num(data.get("remaining_quota"))
         used = self._num(data.get("used_quota"))
@@ -197,6 +205,7 @@ class LeonardoAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         me = d.get("user_details")
         rec = me[0] if isinstance(me, list) and me else d
         if not isinstance(rec, dict):
@@ -229,6 +238,7 @@ class RecraftAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         for k in ("credits", "balance", "credit_balance"):
             v = self._num(d.get(k))
             if v is not None:
@@ -251,6 +261,7 @@ class KlingAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         data = d.get("data") if isinstance(d.get("data"), dict) else d
         packs = data.get("resource_pack_subscribe_infos") or []
         for p in packs:
@@ -283,6 +294,7 @@ class ZaiAdapter(KeyBalanceAdapter):
 
     def parse(self, conf, d) -> Result:
         r = self.make(conf, tier=LIVE)
+        r.confidence = "exact"
         data = d.get("data") if isinstance(d.get("data"), dict) else d
         labels = {"5h": "5-hour", "five_hour": "5-hour",
                   "weekly": "Weekly", "week": "Weekly",

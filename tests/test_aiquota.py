@@ -1396,13 +1396,24 @@ class TestKeyBalanceAdapters(Base):
         self.assertEqual(r.windows, [])
         self.assertIn("45,000", r.note)
 
-    def test_revoked_key_says_so(self):
+    def test_revoked_key_gives_an_actionable_reason(self):
+        """A raw status code helps nobody; say what to do about it."""
         ad = self._ad("deepseek")
         with mock.patch("aiquota.adapters.key_balance.get_json",
                         return_value=(401, {})):
             r = ad.probe({"_key": "deepseek", "api_key": "x"})
         self.assertEqual(r.tier, "error")
-        self.assertIn("revoked", r.error)
+        self.assertEqual(r.failure_kind, "auth_expired")
+        self.assertIn("platform.deepseek.com", r.failure_hint)
+
+    def test_live_readings_are_marked_exact(self):
+        """These providers report real counts, not percentages of a guess."""
+        ad = self._ad("deepseek")
+        body = {"balance_infos": [{"currency": "USD", "total_balance": "5"}]}
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, body)):
+            r = ad.probe({"_key": "deepseek", "api_key": "x"})
+        self.assertEqual(r.confidence, "exact")
 
 
 class TestChatGPTConsumerLimits(Base):
@@ -1460,6 +1471,121 @@ class TestChatGPTConsumerLimits(Base):
             self.assertNotIn(bad, src,
                              "chat message counts are not readable; "
                              "do not estimate them")
+
+
+class TestFailures(Base):
+    """Structured failure reasons, not bare status codes."""
+
+    def test_classify_maps_codes_to_reasons(self):
+        from aiquota import failures as F
+        self.assertEqual(F.classify_http("X", 401).kind, "auth_expired")
+        self.assertEqual(F.classify_http("X", 403).kind, "auth_expired")
+        self.assertEqual(F.classify_http("X", 429).kind, "rate_limited")
+        self.assertEqual(F.classify_http("X", 503).kind, "provider_down")
+
+    def test_actionable_flag_separates_user_fault_from_provider_fault(self):
+        from aiquota import failures as F
+        self.assertTrue(F.auth_expired("X").actionable)
+        self.assertFalse(F.provider_down("X", 500).actionable)
+        self.assertFalse(F.rate_limited("X").actionable)
+
+    def test_rate_limit_is_retryable_but_auth_is_not(self):
+        from aiquota import failures as F
+        self.assertTrue(F.rate_limited("X").retryable)
+        self.assertFalse(F.auth_expired("X").retryable)
+
+    def test_parse_failure_asks_for_a_report(self):
+        """A shape change is how undocumented endpoints rot. Say so loudly."""
+        from aiquota import failures as F
+        f = F.parse_failure("X", "no balance field")
+        self.assertIn("changed their API", f.hint)
+
+
+class TestAdaptiveRefresh(Base):
+    """Polling every minute while the user sleeps is rude and drains battery."""
+
+    def test_recent_interaction_polls_fastest(self):
+        from aiquota import refresh as R
+        d = R.decide(now=1000, last_seen_at=999, constrained=False)
+        self.assertEqual(d.reason, "recent_interaction")
+        self.assertEqual(d.delay, R.RECENT_INTERACTION)
+
+    def test_interval_widens_as_attention_fades(self):
+        from aiquota import refresh as R
+        delays = [R.decide(now=10000, last_seen_at=10000 - age,
+                           constrained=False).delay
+                  for age in (60, 10 * 60, 40 * 60)]
+        self.assertEqual(delays, sorted(delays), "delay must never shrink")
+        self.assertEqual(delays[-1], R.LONG_IDLE)
+
+    def test_low_power_mode_wins_over_everything(self):
+        """The user chose battery life; a quota number is not more important."""
+        from aiquota import refresh as R
+        d = R.decide(now=1000, last_seen_at=1000, coding_active=True,
+                     constrained=True)
+        self.assertEqual(d.reason, "constrained")
+        self.assertEqual(d.delay, R.CONSTRAINED)
+
+    def test_coding_activity_keeps_it_fresh_without_a_click(self):
+        from aiquota import refresh as R
+        d = R.decide(now=10000, last_seen_at=10000 - 3600,
+                     coding_active=True, constrained=False)
+        self.assertEqual(d.reason, "coding_activity")
+        self.assertLessEqual(d.delay, R.CODING_ACTIVITY_CAP)
+
+    def test_never_seen_is_not_treated_as_just_seen(self):
+        from aiquota import refresh as R
+        d = R.decide(now=1000, last_seen_at=None, constrained=False)
+        self.assertEqual(d.delay, R.LONG_IDLE)
+
+    def test_touch_then_read_roundtrips(self):
+        from aiquota import refresh as R
+        p = os.path.join(self.home, "seen")
+        R.touch(p)
+        self.assertIsNotNone(R.last_seen(p))
+
+    def test_unreadable_marker_does_not_explode(self):
+        from aiquota import refresh as R
+        self.assertIsNone(R.last_seen("/nope/does/not/exist"))
+
+
+class TestConfidence(Base):
+    """A live number can still be imprecise; say which."""
+
+    def test_percent_only_providers_are_marked(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        for name in ("claude", "chatgpt"):
+            src_ok = registry()[name]
+            self.assertTrue(hasattr(src_ok, "probe"), name)
+        import pathlib
+        root = pathlib.Path(__file__).parent.parent / "aiquota" / "adapters"
+        for f in ("claude.py", "chatgpt.py"):
+            self.assertIn('confidence = "percent_only"',
+                          (root / f).read_text(),
+                          f"{f} reports percentages, not counts")
+
+    def test_result_roundtrips_new_fields(self):
+        from aiquota.core import Result
+        r = Result(name="x", service="X", confidence="exact",
+                   failure_kind="auth_expired", failure_hint="do the thing")
+        back = Result.from_dict(r.to_dict())
+        self.assertEqual(back.confidence, "exact")
+        self.assertEqual(back.failure_hint, "do the thing")
+
+    def test_old_caches_still_load(self):
+        """Upgrading must not break on caches written by an older version."""
+        from aiquota.core import Result
+        old = {"name": "x", "service": "X", "plan": "", "tier": "live",
+               "windows": [], "note": "", "error": None, "extra": {}}
+        r = Result.from_dict(old)
+        self.assertEqual(r.confidence, "unknown")
+
+    def test_unknown_future_fields_are_ignored(self):
+        from aiquota.core import Result
+        d = {"name": "x", "service": "X", "windows": [],
+             "some_field_from_the_future": 1}
+        self.assertEqual(Result.from_dict(d).name, "x")
 
 
 class TestHTML(Base):

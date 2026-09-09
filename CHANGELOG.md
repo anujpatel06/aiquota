@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0 — 2026-09-09
+
+Ideas worth taking from CodexBar (21k stars, MIT), credited and adapted.
+
+### Added — adaptive refresh
+Checks widen from 2 min while you're looking to 30 min when nobody is, and
+back off to 30 min in Low Power Mode. `aiquota refresh` prints the decision
+and why. Polling a provider every minute while the user sleeps drains their
+battery and is the kind of traffic that gets undocumented endpoints closed.
+
+### Added — structured failure reasons
+"HTTP 401" tells nobody anything. Failures now carry a kind, whether the user
+can fix it, whether retrying helps, and what to actually do — surfaced as a
+hint line under the error in the widget.
+
+### Added — confidence, separate from tier
+A reading can be live and still imprecise. `exact` means the provider gave
+real counts; `percent_only` means it gave a percentage with no totals behind
+it (Claude and ChatGPT both do this). Tier says where a number came from;
+confidence says how precise it is.
+
+### Fixed
+`Result.from_dict` tolerates caches written by older versions instead of
+raising on unknown fields.
+
 ## 0.3.0 — 2026-09-09
 
 Coverage: 16 → 28 platforms.
