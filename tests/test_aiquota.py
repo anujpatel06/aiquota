@@ -491,8 +491,14 @@ class TestCatalog(Base):
         from aiquota.cli import main
         import io
         from contextlib import redirect_stdout
+        from aiquota.catalog import sorted_catalog
+        # Pick a genuinely manual platform by name rather than by menu
+        # position — positions shift whenever a platform gains an adapter.
+        entries = sorted_catalog()
+        idx = next(i for i, e in enumerate(entries, start=1)
+                   if e["adapter"] == "manual")
         old = sys.stdin
-        sys.stdin = io.StringIO("9\n\n\n\n\n")   # pick one, skip all fields
+        sys.stdin = io.StringIO(f"{idx}\n\n\n\n\n")   # pick it, skip all fields
         try:
             with redirect_stdout(io.StringIO()):
                 main(["link", "--color", "never"])
@@ -815,6 +821,71 @@ class TestChatGPTAccountId(Base):
         from aiquota.adapters.chatgpt import _account_from_jwt
         for bad in (None, "", "notajwt", "a.b", "a.!!!.c"):
             self.assertIsNone(_account_from_jwt(bad))
+
+
+class TestSessionAdapters(Base):
+    """Platforms whose quota is only visible to a signed-in dashboard.
+
+    These were 'manual entry' purely because nobody had looked. Probing the
+    dashboards' own endpoints unauthenticated returns 401 (route exists,
+    wants a session), not 404 — so a sign-in the user performs themselves
+    can read them.
+    """
+
+    def _ad(self, name):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        return registry()[name]
+
+    def test_all_four_are_registered_and_offer_browser_login(self):
+        from aiquota.login_policy import may_browser_login
+        for n in ("cursor", "suno", "grok", "runway"):
+            ad = self._ad(n)
+            self.assertTrue(ad.browser_login["url"].startswith("https://"), n)
+            self.assertTrue(ad.browser_login["want"], f"{n}: no cookie named")
+            self.assertTrue(may_browser_login(n), f"{n} must offer sign-in")
+
+    def test_unconfigured_without_a_session(self):
+        for n in ("cursor", "suno", "grok", "runway"):
+            r = self._ad(n).probe({"_key": n})
+            self.assertEqual(r.tier, "unconfigured", n)
+
+    def test_cursor_parses_documented_shape(self):
+        ad = self._ad("cursor")
+        body = {"gpt-4": {"numRequests": 125, "maxRequestUsage": 500},
+                "startOfMonth": "2026-09-01T00:00:00Z"}
+        with mock.patch("aiquota.adapters.session_based.get_json",
+                        return_value=(200, body)):
+            r = ad.probe({"_key": "cursor", "session": {"x": "y"}})
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows[0].used_pct, 25.0)
+
+    def test_suno_parses_credits(self):
+        ad = self._ad("suno")
+        body = {"total_credits_left": 250, "monthly_limit": 1000,
+                "subscription_type": "Pro"}
+        with mock.patch("aiquota.adapters.session_based.get_json",
+                        return_value=(200, body)):
+            r = ad.probe({"_key": "suno", "session": {"__session": "z"}})
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows[0].used_pct, 75.0)
+        self.assertEqual(r.plan, "Pro")
+
+    def test_expired_session_says_so(self):
+        ad = self._ad("cursor")
+        with mock.patch("aiquota.adapters.session_based.get_json",
+                        return_value=(401, {})):
+            r = ad.probe({"_key": "cursor", "session": {"x": "y"}})
+        self.assertEqual(r.tier, "error")
+        self.assertIn("sign in again", r.error)
+
+    def test_no_quota_fields_never_fabricates_a_number(self):
+        ad = self._ad("suno")
+        with mock.patch("aiquota.adapters.session_based.get_json",
+                        return_value=(200, {"subscription_type": "Free"})):
+            r = ad.probe({"_key": "suno", "session": {"__session": "z"}})
+        self.assertEqual(r.windows, [])
+        self.assertEqual(r.tier, "error")
 
 
 class TestHTML(Base):

@@ -56,6 +56,34 @@ LOGIN_POLICY = {
         "No third-party OAuth; a user-created API key is the supported route.",
         "https://elevenlabs.io/docs/api-reference/authentication",
     ),
+
+    # --- session-based: no developer API, but no prohibition either ---
+    # These dashboards read quota from an internal endpoint that answers to a
+    # signed-in session. Probed unauthenticated, each returns 401 (the route
+    # exists and wants a login) rather than 404. None of these providers
+    # restrict third-party access to a user's own account the way Anthropic
+    # does, so a browser sign-in the user performs themselves is legitimate.
+    "cursor": (
+        "browser",
+        "Quota lives behind the dashboard session; no ToS restriction on "
+        "reading your own account.",
+        "https://cursor.com/dashboard",
+    ),
+    "suno": (
+        "browser",
+        "Credit balance is exposed to the signed-in dashboard only.",
+        "https://suno.com/account",
+    ),
+    "grok": (
+        "browser",
+        "Subscription tier is exposed to the signed-in session only.",
+        "https://grok.com",
+    ),
+    "runway": (
+        "browser",
+        "Credit balance is exposed to the signed-in session only.",
+        "https://app.runwayml.com",
+    ),
 }
 
 DEFAULT = ("manual", "No public quota API; values are entered by hand.", "")
