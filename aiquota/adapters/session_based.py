@@ -5,7 +5,6 @@ web dashboards read it from an internal endpoint. Probing unauthenticated shows
 the routes exist and simply want a session:
 
     cursor.com/api/usage                          401 not_authenticated
-    studio-api.prod.suno.com/api/billing/info/    401 Unauthorized
     grok.com/rest/subscriptions                   401 No credentials presented
     api.runwayml.com/v1/profile                   401 No authorization token
 
@@ -109,38 +108,6 @@ class CursorAdapter(SessionAdapter):
             r.tier, r.error = ERROR, "no quota fields in response"
         return r
 
-
-@register
-class SunoAdapter(SessionAdapter):
-    name = "suno"
-    service = "Suno"
-    summary = "Song credits and renewal date"
-    setup = "Sign in through your browser — click Add in the widget."
-    usage_url = "https://studio-api.prod.suno.com/api/billing/info/"
-    login_url = "https://suno.com/account"
-    cookie_domains = ["suno.com", "suno.ai"]
-    want_cookies = ["__session"]
-
-    def parse(self, conf, d) -> Result:
-        r = self.make(conf, tier=LIVE)
-        left = d.get("total_credits_left")
-        cap = d.get("monthly_limit") or d.get("credits_limit")
-        if left is not None and cap:
-            try:
-                used = float(cap) - float(left)
-                r.windows.append(Window(
-                    key="credits", label="Credits",
-                    used_pct=round(used / float(cap) * 100, 1),
-                    resets_at=fmt_reset(d.get("next_refresh_at")) or ""))
-                r.extra["credits_left"] = left
-                r.extra["credits_total"] = cap
-            except (TypeError, ValueError, ZeroDivisionError):
-                pass
-        if d.get("subscription_type"):
-            r.plan = str(d["subscription_type"])
-        if not r.windows:
-            r.tier, r.error = ERROR, "no credit fields in response"
-        return r
 
 
 @register

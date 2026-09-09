@@ -35,11 +35,33 @@ for e, why, src in cred:
     link = f"[{host}]({src})" if src else "—"
     lines.append(f"| **{e['name']}** | {short} | {link} |")
 
-lines += ["", "### Manual entry", "",
-          "No reachable usage endpoint — probed and confirmed, not assumed.",
-          "You enter the numbers and they're labelled `manual`.", ""]
-lines.append(", ".join(f"**{e['name']}**" for e, _w, _s in manual) + ".")
-lines += ["", "Anything not listed: choose \"Something else…\" in the picker.",
+lines += ["", "### Manual entry", ""]
+
+# Split the manual bucket: "no endpoint" is a very different statement from
+# "the provider forbids reading it", and collapsing them would hide the more
+# important one.
+refused = [(e, w, s) for e, w, s in manual
+           if "prohibit" in w.lower() or "forbid" in w.lower()]
+absent = [(e, w, s) for e, w, s in manual if (e, w, s) not in refused]
+
+if absent:
+    lines += ["No reachable usage endpoint — probed and confirmed, not assumed.",
+              "You enter the numbers and they're labelled `manual`.", "",
+              ", ".join(f"**{e['name']}**" for e, _w, _s in absent) + ".", ""]
+
+if refused:
+    lines += ["#### Deliberately not read", "",
+              "These have working endpoints. aiquota refuses to use them,",
+              "because the provider prohibits automated access and enforces it.",
+              "A quota number isn't worth someone's account.", "",
+              "| Platform | Why | Source |", "|---|---|---|"]
+    for e, why, src in refused:
+        host = src.split("//")[-1].split("/")[0] if src else ""
+        link = f"[{host}]({src})" if src else "—"
+        lines.append(f"| **{e['name']}** | {why} | {link} |")
+    lines.append("")
+
+lines += ["Anything not listed: choose \"Something else…\" in the picker.",
           "",
           "If you know a real endpoint for a manual entry, that's the most",
           "valuable PR you can send — see [CONTRIBUTING.md](CONTRIBUTING.md).",

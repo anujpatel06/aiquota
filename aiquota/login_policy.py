@@ -69,11 +69,6 @@ LOGIN_POLICY = {
         "reading your own account.",
         "https://cursor.com/dashboard",
     ),
-    "suno": (
-        "browser",
-        "Credit balance is exposed to the signed-in dashboard only.",
-        "https://suno.com/account",
-    ),
     "grok": (
         "browser",
         "Subscription tier is exposed to the signed-in session only.",
@@ -90,11 +85,25 @@ LOGIN_POLICY = {
         "plain HTTP clients, so the reading is taken inside the browser.",
         "https://www.perplexity.ai/settings/account",
     ),
+
+    # --- refused: the provider forbids automated access outright ---
+    # These have working endpoints and adapters could read them, but their
+    # terms prohibit it in language that has been enforced with bans. A quota
+    # number is not worth someone's account.
     "midjourney": (
-        "browser",
-        "Fast GPU minutes are exposed to the signed-in session only; the host "
-        "refuses non-browser TLS, so the reading is taken in the browser.",
-        "https://www.midjourney.com/account",
+        "manual",
+        "Midjourney prohibits automated access outright — \"automating "
+        "interactions with Midjourney service is strictly prohibited\", listed "
+        "as one of four Community Guidelines rules, enforced with account "
+        "blocks. aiquota will not read it for you.",
+        "https://docs.midjourney.com/hc/en-us/articles/32013696484109-Community-Guidelines",
+    ),
+    "suno": (
+        "manual",
+        "Suno's terms forbid \"any data mining, robots, scraping, or similar "
+        "data gathering or extraction methods\" (clause 13). Reading the "
+        "billing endpoint on a schedule is exactly that.",
+        "https://suno.com/legal/terms",
     ),
 }
 

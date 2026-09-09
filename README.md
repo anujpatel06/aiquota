@@ -223,19 +223,13 @@ How you connect each one depends on what the provider allows.
 Click the platform, its own login page opens, you pick the account.
 No API key, no password shown to aiquota.
 
-<p align="center">
-  <img src="docs/img/picker.png" width="420" alt="Platform picker listing 16 AI services with logos and status">
-</p>
-
 | Platform | What you get |
 |---|---|
 | **Cursor** | Request quota for the billing period (sign in) |
 | **Grok** | Subscription tier (sign in) |
-| **Midjourney** | Fast GPU minutes (sign in) |
 | **OpenRouter** | Credit balance and spend (official API) |
 | **Perplexity** | Pro search quota (sign in) |
 | **Runway** | Credit balance (sign in) |
-| **Suno** | Song credits and renewal date (sign in) |
 
 ### Uses a credential you already have
 
@@ -255,6 +249,17 @@ No reachable usage endpoint — probed and confirmed, not assumed.
 You enter the numbers and they're labelled `manual`.
 
 **Gemini**, **Higgsfield**, **Lovable**, **Replit**, **v0**.
+
+#### Deliberately not read
+
+These have working endpoints. aiquota refuses to use them,
+because the provider prohibits automated access and enforces it.
+A quota number isn't worth someone's account.
+
+| Platform | Why | Source |
+|---|---|---|
+| **Midjourney** | Midjourney prohibits automated access outright — "automating interactions with Midjourney service is strictly prohibited", listed as one of four Community Guidelines rules, enforced with account blocks. aiquota will not read it for you. | [docs.midjourney.com](https://docs.midjourney.com/hc/en-us/articles/32013696484109-Community-Guidelines) |
+| **Suno** | Suno's terms forbid "any data mining, robots, scraping, or similar data gathering or extraction methods" (clause 13). Reading the billing endpoint on a schedule is exactly that. | [suno.com](https://suno.com/legal/terms) |
 
 Anything not listed: choose "Something else…" in the picker.
 

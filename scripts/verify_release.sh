@@ -1,7 +1,8 @@
 #!/bin/bash
 # Full pre-release verification. Any failure here should block the tag.
 set -e
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$ROOT" && pwd)"
+cd "$ROOT"
 FAIL=0
 ok(){ echo "  PASS  $1"; }
 bad(){ echo "  FAIL  $1"; FAIL=1; }
@@ -60,7 +61,7 @@ sys.exit(0 if os.path.isdir(iw.SRC) and len(os.listdir(iw.SRC))>=4 else 1)
 
 echo
 echo "=== 8. no fabricated data in the repo ==="
-cd "$(dirname "$0")/.."
+cd "$ROOT"
 # The real risk is a non-live tier rendering as live. A test enforces it;
 # confirm that test exists and passes rather than grepping for numbers.
 if python3 -m unittest tests.test_aiquota -k tier 2>&1 | tail -1 | grep -q "^OK"; then

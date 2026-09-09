@@ -5,12 +5,10 @@ Both of these refuse a stdlib request outright, for different reasons:
     Perplexity   Cloudflare fingerprints the TLS handshake, so urllib gets a
                  "Just a moment..." challenge page no matter what headers or
                  cookies it sends.
-    Midjourney   the host rejects Python's TLS entirely
-                 (TLSV1_ALERT_PROTOCOL_VERSION).
 
 Verified by running the same request from inside a Chrome page instead —
-Perplexity answered 200 with real JSON, Midjourney a clean 401 — so the
-readings are taken in the browser window rather than by the adapter.
+Perplexity answered 200 with real JSON, so the reading is taken in the
+browser window rather than by the adapter.
 
 Because of that, these two store their usage at sign-in time and re-read it
 by briefly reopening the window on refresh. That is heavier than a plain HTTP
@@ -99,40 +97,3 @@ class PerplexityAdapter(BrowserReadAdapter):
         return r
 
 
-@register
-class MidjourneyAdapter(BrowserReadAdapter):
-    name = "midjourney"
-    service = "Midjourney"
-    summary = "Fast GPU minutes and plan"
-    setup = "Sign in through your browser — click Add in the widget."
-    login_url = "https://www.midjourney.com/explore"
-    endpoints = [
-        "https://www.midjourney.com/api/app/billing-subscription/",
-        "https://www.midjourney.com/api/app/user-info/",
-    ]
-    cookie_domains = ["midjourney.com"]
-    want_cookies = ["__Secure-next-auth.session-token"]
-
-    def parse(self, conf, data) -> Result:
-        bill = data.get(self.endpoints[0]) or {}
-        r = self.make(conf, tier=LIVE)
-        if bill.get("plan"):
-            r.plan = str(bill["plan"])
-
-        # Fast GPU minutes: the meter people actually watch.
-        used = bill.get("fast_time_used") or bill.get("fastTimeUsed")
-        cap = bill.get("fast_time_allowance") or bill.get("fastTimeAllowance")
-        if used is not None and cap:
-            try:
-                r.windows.append(Window(
-                    key="fast", label="Fast GPU minutes",
-                    used_pct=round(float(used) / float(cap) * 100, 1),
-                    resets_at=str(bill.get("renewal_date") or "")))
-                r.extra["fast_used"] = used
-                r.extra["fast_total"] = cap
-            except (TypeError, ValueError, ZeroDivisionError):
-                pass
-
-        if not r.windows:
-            r.note = "signed in — no GPU-minute fields in response"
-        return r

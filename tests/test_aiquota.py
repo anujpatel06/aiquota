@@ -839,14 +839,14 @@ class TestSessionAdapters(Base):
 
     def test_all_four_are_registered_and_offer_browser_login(self):
         from aiquota.login_policy import may_browser_login
-        for n in ("cursor", "suno", "grok", "runway"):
+        for n in ("cursor", "grok", "runway"):
             ad = self._ad(n)
             self.assertTrue(ad.browser_login["url"].startswith("https://"), n)
             self.assertTrue(ad.browser_login["want"], f"{n}: no cookie named")
             self.assertTrue(may_browser_login(n), f"{n} must offer sign-in")
 
     def test_unconfigured_without_a_session(self):
-        for n in ("cursor", "suno", "grok", "runway"):
+        for n in ("cursor", "grok", "runway"):
             r = self._ad(n).probe({"_key": n})
             self.assertEqual(r.tier, "unconfigured", n)
 
@@ -860,16 +860,6 @@ class TestSessionAdapters(Base):
         self.assertEqual(r.tier, "live")
         self.assertEqual(r.windows[0].used_pct, 25.0)
 
-    def test_suno_parses_credits(self):
-        ad = self._ad("suno")
-        body = {"total_credits_left": 250, "monthly_limit": 1000,
-                "subscription_type": "Pro"}
-        with mock.patch("aiquota.adapters.session_based.get_json",
-                        return_value=(200, body)):
-            r = ad.probe({"_key": "suno", "session": {"__session": "z"}})
-        self.assertEqual(r.tier, "live")
-        self.assertEqual(r.windows[0].used_pct, 75.0)
-        self.assertEqual(r.plan, "Pro")
 
     def test_expired_session_says_so(self):
         ad = self._ad("cursor")
@@ -878,14 +868,6 @@ class TestSessionAdapters(Base):
             r = ad.probe({"_key": "cursor", "session": {"x": "y"}})
         self.assertEqual(r.tier, "error")
         self.assertIn("sign in again", r.error)
-
-    def test_no_quota_fields_never_fabricates_a_number(self):
-        ad = self._ad("suno")
-        with mock.patch("aiquota.adapters.session_based.get_json",
-                        return_value=(200, {"subscription_type": "Free"})):
-            r = ad.probe({"_key": "suno", "session": {"__session": "z"}})
-        self.assertEqual(r.windows, [])
-        self.assertEqual(r.tier, "error")
 
 
 class TestStaleEntries(Base):
@@ -1150,7 +1132,7 @@ class TestBrowserReadAdapters(Base):
 
     def test_both_offer_browser_login_with_read_endpoints(self):
         from aiquota.login_policy import may_browser_login
-        for n in ("perplexity", "midjourney"):
+        for n in ("perplexity",):
             ad = self._ad(n)
             spec = ad.browser_login
             self.assertTrue(may_browser_login(n), n)
@@ -1158,7 +1140,7 @@ class TestBrowserReadAdapters(Base):
             self.assertTrue(all(e.startswith("https://") for e in spec["read"]))
 
     def test_unconfigured_before_sign_in(self):
-        for n in ("perplexity", "midjourney"):
+        for n in ("perplexity",):
             self.assertEqual(self._ad(n).probe({"_key": n}).tier,
                              "unconfigured")
 
@@ -1173,15 +1155,6 @@ class TestBrowserReadAdapters(Base):
         self.assertEqual(r.windows[0].used_pct, 25.0)
         self.assertEqual(r.plan, "Pro")
 
-    def test_midjourney_parses_fast_minutes(self):
-        ad = self._ad("midjourney")
-        ep = ad.endpoints[0]
-        conf = {"_key": "midjourney", "session": {"x": "y"},
-                "readings": {ep: {"fast_time_used": 3, "fast_time_allowance": 15,
-                                  "plan": "Standard"}}}
-        r = ad.probe(conf)
-        self.assertEqual(r.tier, "live")
-        self.assertEqual(r.windows[0].used_pct, 20.0)
 
     def test_missing_counters_never_fabricate_a_number(self):
         ad = self._ad("perplexity")
@@ -1303,6 +1276,60 @@ class TestInstallability(Base):
         from aiquota.cli import build_parser
         a = build_parser().parse_args(["install-widget", "menubar"])
         self.assertEqual(a.which, "menubar")
+
+
+class TestProhibitedProviders(Base):
+    """Providers that forbid automated access must stay unreadable.
+
+    Midjourney's Community Guidelines list "Unauthorized automation & third
+    party apps are not allowed" as one of four rules and enforce it with
+    account blocks. Suno's terms forbid "any data mining, robots, scraping,
+    or similar data gathering or extraction methods" (clause 13).
+
+    Working endpoints exist for both — adapters were built and then removed.
+    Convenience is not worth a user's account, so this is enforced in code
+    rather than left to whoever edits the catalog next.
+    """
+
+    PROHIBITED = ("midjourney", "suno")
+
+    def test_no_adapter_is_registered(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        reg = registry()
+        for key in self.PROHIBITED:
+            self.assertNotIn(key, reg,
+                             f"{key} must have no adapter — its provider "
+                             f"prohibits automated access")
+
+    def test_policy_is_manual_and_cites_the_prohibition(self):
+        from aiquota.login_policy import policy_for, may_browser_login
+        for key in self.PROHIBITED:
+            policy, why, source = policy_for(key)
+            self.assertEqual(policy, "manual", key)
+            self.assertFalse(may_browser_login(key), key)
+            self.assertTrue(source.startswith("http"), f"{key}: no source")
+            self.assertRegex(why, r"(?i)prohibit|forbid",
+                             f"{key}: must say the provider forbids it")
+
+    def test_catalog_marks_them_manual(self):
+        from aiquota.catalog import by_key
+        for key in self.PROHIBITED:
+            e = by_key(key)
+            self.assertEqual(e["adapter"], "manual", key)
+            self.assertEqual(e["support"], "manual", key)
+
+    def test_no_endpoint_urls_remain_in_the_codebase(self):
+        """A stray URL is a re-enable waiting to happen."""
+        import pathlib
+        pkg = pathlib.Path(__file__).parent.parent / "aiquota"
+        banned = ("studio-api.prod.suno.com", "midjourney.com/api")
+        for py in pkg.rglob("*.py"):
+            body = py.read_text()
+            for frag in banned:
+                self.assertNotIn(
+                    frag, body,
+                    f"{py.name} still references {frag}")
 
 
 class TestHTML(Base):

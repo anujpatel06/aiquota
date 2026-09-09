@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.1 — 2026-09-09
+
+**Removed Midjourney and Suno sign-in.** Both adapters worked. Both are gone.
+
+Competitive research turned up something I should have checked before
+shipping them: these two providers explicitly prohibit automated access, in
+language they enforce with account blocks.
+
+- Midjourney lists "Unauthorized automation & third party apps are not
+  allowed" as one of four Community Guidelines rules: *"automating
+  interactions with Midjourney service is strictly prohibited... Accounts who
+  do not comply with these rules may be blocked."*
+- Suno's terms forbid *"any data mining, robots, scraping, or similar data
+  gathering or extraction methods"* (clause 13). Polling a billing endpoint
+  on a schedule is exactly that.
+
+I had verified that neither carried Anthropic's specific OAuth restriction
+and treated that as sufficient. It wasn't — I checked the wrong clause. Both
+are now manual entry, their endpoint URLs are gone from the codebase, and
+tests fail if anyone re-adds an adapter for either.
+
+The README now separates "no endpoint exists" from "the provider forbids
+reading it", because those are very different statements and collapsing them
+hid the more important one.
+
+Sign-in platforms: 7 → 5 (Cursor, Grok, OpenRouter, Perplexity, Runway).
+
 ## 0.2.0 — 2026-09-09
 
 The release that made aiquota installable, and made "add an account" mean
