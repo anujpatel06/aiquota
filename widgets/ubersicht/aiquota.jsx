@@ -138,6 +138,17 @@ export const className = `
     margin-left: auto;
     font-size: 22px; font-weight: 600; letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums; line-height: 1;
+    text-align: right;
+  }
+  /* The headline is the WORST window, not a fixed one — say which, so an
+     18% that came from the 7-day meter can't be mistaken for the 5-hour. */
+  .sbiglab {
+    display: block; margin-top: 3px;
+    font-size: 9px; font-weight: 500; letter-spacing: 0;
+    color: rgba(255, 255, 255, 0.38);
+  }
+  @media (prefers-color-scheme: light) {
+    .sbiglab { color: rgba(0, 0, 0, 0.38); }
   }
   @media (prefers-color-scheme: light) {
     .splan { color: rgba(0, 0, 0, 0.42); }
@@ -145,17 +156,23 @@ export const className = `
 
   .meter { margin-top: 7px; }
   .mlabel {
-    display: flex; justify-content: space-between; gap: 8px;
+    display: flex; align-items: baseline; gap: 6px;
     font-size: 11px; margin-bottom: 4px;
     color: rgba(255, 255, 255, 0.5);
   }
-  .mlabel b {
+  .mname { flex: 1; }
+  /* Per-window percentage — previously the reset time replaced this, so the
+     5-hour number was unreadable even though its bar was drawn. */
+  .mpct {
     font-weight: 590; font-variant-numeric: tabular-nums;
-    color: rgba(255, 255, 255, 0.78);
+  }
+  .mreset {
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.38);
   }
   @media (prefers-color-scheme: light) {
     .mlabel { color: rgba(0, 0, 0, 0.45); }
-    .mlabel b { color: rgba(0, 0, 0, 0.72); }
+    .mreset { color: rgba(0, 0, 0, 0.38); }
   }
 
   /* Capsule track, like a macOS progress view */
@@ -444,6 +461,7 @@ export const render = ({ output }) => {
               {peak ? (
                 <span className="sbig" style={{ color: tone(Number(peak.used_pct)) }}>
                   {Math.round(Number(peak.used_pct))}%
+                  <span className="sbiglab">{peak.label}</span>
                 </span>
               ) : null}
             </div>
@@ -453,8 +471,13 @@ export const render = ({ output }) => {
               return (
                 <div className="meter" key={j}>
                   <div className="mlabel">
-                    <span>{w.label}</span>
-                    <b>{w.resets_at || `${p.toFixed(0)}%`}</b>
+                    <span className="mname">{w.label}</span>
+                    <b className="mpct" style={{ color: tone(p) }}>
+                      {p.toFixed(0)}%
+                    </b>
+                    {w.resets_at ? (
+                      <span className="mreset">{w.resets_at}</span>
+                    ) : null}
                   </div>
                   <div className="track">
                     <div
