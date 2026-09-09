@@ -985,6 +985,78 @@ class TestPickerRouting(Base):
             self.assertTrue(spec["domains"], f"{key}: no cookie domain")
 
 
+class TestRemoveUI(Base):
+    """The × must actually remove, after asking.
+
+    Regression: the widget built AppleScript inside a JS string inside a
+    shell command. The click log proved the command ran but the quoting had
+    collapsed — `display dialog Remove claude from aiquota?` with no quotes
+    is not valid AppleScript, so osascript failed silently and nothing was
+    ever removed.
+    """
+
+    def _cfg_with(self, *names):
+        from aiquota.core import load_config, save_config
+        cfg = load_config()
+        cfg["services"] = {n: {"adapter": "manual", "service": n.title(),
+                               "credits": 1} for n in names}
+        save_config(cfg)
+        return cfg
+
+    def test_confirming_removes_the_service(self):
+        from aiquota import remove_ui
+        from aiquota.core import load_config
+        self._cfg_with("claude", "chatgpt")
+        with mock.patch.object(remove_ui, "confirm", return_value=True), \
+             mock.patch.object(remove_ui, "notify"):
+            rc = remove_ui.remove("claude")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("claude", load_config()["services"])
+        self.assertIn("chatgpt", load_config()["services"])
+
+    def test_declining_keeps_the_service(self):
+        from aiquota import remove_ui
+        from aiquota.core import load_config
+        self._cfg_with("claude")
+        with mock.patch.object(remove_ui, "confirm", return_value=False), \
+             mock.patch.object(remove_ui, "notify"):
+            rc = remove_ui.remove("claude")
+        self.assertEqual(rc, 0)
+        self.assertIn("claude", load_config()["services"],
+                      "declining must not delete anything")
+
+    def test_unknown_service_reports_and_changes_nothing(self):
+        from aiquota import remove_ui
+        from aiquota.core import load_config
+        self._cfg_with("claude")
+        with mock.patch.object(remove_ui, "confirm") as c, \
+             mock.patch.object(remove_ui, "notify"):
+            rc = remove_ui.remove("nope")
+        self.assertEqual(rc, 1)
+        c.assert_not_called()
+        self.assertIn("claude", load_config()["services"])
+
+    def test_yes_flag_skips_the_dialog(self):
+        from aiquota import remove_ui
+        self._cfg_with("claude")
+        with mock.patch.object(remove_ui, "confirm") as c, \
+             mock.patch.object(remove_ui, "notify"):
+            remove_ui.main(["claude", "--yes"])
+        c.assert_not_called()
+
+    def test_widget_passes_one_plain_argument(self):
+        """The JSX must not rebuild nested AppleScript."""
+        import pathlib
+        jsx = pathlib.Path(__file__).parent.parent / \
+            "widgets" / "ubersicht" / "aiquota.jsx"
+        src = jsx.read_text()
+        i = src.index("const removeService")
+        block = src[i:i + 400]
+        self.assertIn("aiquota-remove", block)
+        self.assertNotIn("display dialog", block,
+                         "AppleScript must not be built in the widget")
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

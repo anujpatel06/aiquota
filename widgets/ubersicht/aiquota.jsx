@@ -408,20 +408,17 @@ const openPicker = () =>
       "-e 'tell application \"Terminal\" to activate'"
   );
 
-// Remove a service. Confirms first — this is a one-click destructive action
-// on a control that only appears on hover, so it must be hard to do by
-// accident. Finder owns the dialog because osascript run from Übersicht has
-// no window-server session of its own.
-const removeService = (name) => {
-  const q = String(name).replace(/'/g, "'\\''");
+// Remove a service. The confirmation dialog lives in aiquota-remove, not
+// here: building AppleScript inside a JS string inside a shell command needs
+// three layers of escaping, and the quoting collapsed before osascript ever
+// saw it ("display dialog Remove claude from aiquota?" — quotes gone). One
+// plain argument to one binary has nothing to mis-escape.
+const removeService = (name) =>
   shell(
-    "osascript -e 'tell application \"Finder\" to display dialog " +
-      `"Remove ${q} from aiquota?" buttons {"Cancel","Remove"} ` +
-      "default button \"Cancel\" with icon caution' " +
-      `-e 'do shell script "PATH=$HOME/.local/bin:$PATH aiquota remove ${q} -y"' ` +
-      "|| true"
+    `aiquota-remove ${JSON.stringify(String(name))} && ` +
+      // Clear the TTL cache so the removed card can't be redrawn from it.
+      "aiquota -r >/dev/null 2>&1"
   );
-};
 
 export const render = ({ output }) => {
   let data = {};

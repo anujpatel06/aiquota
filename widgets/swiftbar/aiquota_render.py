@@ -8,13 +8,18 @@ import sys
 TIER = {"live": "●", "manual": "○", "error": "⚠", "unconfigured": "○"}
 
 
-def _cli():
-    """Absolute path to the aiquota binary — SwiftBar's bash= needs one."""
-    for p in (os.path.expanduser("~/.local/bin/aiquota"),
-              "/opt/homebrew/bin/aiquota", "/usr/local/bin/aiquota"):
+def _cli(name="aiquota"):
+    """Absolute path to an aiquota binary — SwiftBar's bash= needs one."""
+    for d in (os.path.expanduser("~/.local/bin"),
+              "/opt/homebrew/bin", "/usr/local/bin"):
+        p = os.path.join(d, name)
         if os.path.exists(p):
             return p
-    return "aiquota"
+    return name
+
+
+def _remove_cli():
+    return _cli("aiquota-remove")
 
 
 def main():
@@ -95,11 +100,11 @@ def main():
         if s.get("error"):
             print("--%s | color=red font=Menlo" % s["error"])
 
-        # Removal lives in each service's own submenu, where it can't be hit
-        # by accident. -y is safe here: the click IS the confirmation.
-        print("--Remove %s… | color=#FF453A bash=%s param1=remove "
-              "param2=%s param3=-y terminal=false refresh=true"
-              % (s.get("service", s["name"]), _cli(), s["name"]))
+        # Removal goes through aiquota-remove, which draws its own
+        # confirmation dialog — same path as the desktop widget.
+        print("--Remove %s… | color=#FF453A bash=%s param1=%s "
+              "terminal=false refresh=true"
+              % (s.get("service", s["name"]), _remove_cli(), s["name"]))
 
     print("---")
     if hidden:

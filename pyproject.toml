@@ -27,6 +27,7 @@ Issues = "https://github.com/anujpatel06/aiquota/issues"
 [project.scripts]
 aiquota = "aiquota.cli:main"
 aiquota-picker = "aiquota.picker:main"
+aiquota-remove = "aiquota.remove_ui:main"
 
 [tool.setuptools.packages.find]
 include = ["aiquota*"]
