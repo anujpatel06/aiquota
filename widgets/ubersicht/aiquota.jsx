@@ -33,13 +33,22 @@ export const className = `
   line-height: 1.3;
   letter-spacing: -0.01em;
 
-  /* Widget material: translucent + blurred, like WidgetKit's system material.
-     Opacity 0.81 = half the transparency of the original 0.62 (0.38 -> 0.19),
-     so the wallpaper still tints it but text stays legible over busy images. */
+  /* Widget material.
+     Übersicht widgets are web views on the desktop — backdrop-filter has no
+     real macOS vibrancy to sample, so at 0.81 the wallpaper showed straight
+     through and a hard edge in the image (the white/red diagonal) cut the
+     card in half: one corner washed out, the rest dark. That reads as a
+     rendering fault rather than translucency.
+
+     Fixed by compositing over an opaque base so the panel is uniform whatever
+     sits behind it, with a light tint left on top to keep some of the
+     wallpaper's colour. */
   color: rgba(255, 255, 255, 0.92);
-  background: rgba(28, 28, 30, 0.81);
-  -webkit-backdrop-filter: blur(50px) saturate(180%);
-  backdrop-filter: blur(50px) saturate(180%);
+  background:
+    linear-gradient(rgba(28, 28, 30, 0.94), rgba(28, 28, 30, 0.94)),
+    rgb(28, 28, 30);
+  -webkit-backdrop-filter: blur(60px) saturate(140%);
+  backdrop-filter: blur(60px) saturate(140%);
 
   border-radius: 24px;
   padding: 16px;
@@ -54,7 +63,9 @@ export const className = `
 
   @media (prefers-color-scheme: light) {
     color: rgba(0, 0, 0, 0.88);
-    background: rgba(255, 255, 255, 0.83);
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)),
+      rgb(255, 255, 255);
     box-shadow:
       inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
       0 1px 1px rgba(0, 0, 0, 0.06),
