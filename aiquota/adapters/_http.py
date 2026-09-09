@@ -31,8 +31,9 @@ def request(url: str, headers: Optional[Dict[str, str]] = None,
 
 
 def get_json(url: str, headers: Optional[Dict[str, str]] = None,
-             timeout: int = 30) -> Tuple[int, Any]:
-    code, _, body = request(url, headers=headers, timeout=timeout)
+             timeout: int = 30, data: Optional[bytes] = None) -> Tuple[int, Any]:
+    """GET, or POST when `data` is supplied (urllib infers the method)."""
+    code, _, body = request(url, headers=headers, timeout=timeout, data=data)
     try:
         return code, json.loads(body.decode() or "null")
     except Exception:

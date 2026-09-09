@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiquota"
-version = "0.2.1"
+version = "0.3.0"
 description = "See how much of every AI subscription you've used, in one place."
 readme = "README.md"
 requires-python = ">=3.8"

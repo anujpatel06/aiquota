@@ -243,15 +243,23 @@ credential you created yourself — and asks first.
 |---|---|---|
 | **ChatGPT / Codex** | Codex CLI's login is issued to Codex. | [developers.openai.com](https://developers.openai.com/codex/auth) |
 | **Claude** | Anthropic restricts OAuth to Claude Code and its own applications. | [code.claude.com](https://code.claude.com/docs/en/legal-and-compliance) |
+| **DeepSeek** | Documented balance endpoint; you create the key. | [api-docs.deepseek.com](https://api-docs.deepseek.com/api/get-user-balance) |
 | **ElevenLabs** | No third-party OAuth; a user-created API key is the supported route. | [elevenlabs.io](https://elevenlabs.io/docs/api-reference/authentication) |
+| **fal.ai** | Documented billing endpoint; you create the key. | [docs.fal.ai](https://docs.fal.ai/) |
 | **GitHub Copilot** | Reuses your existing `gh` CLI login, which you performed yourself. | [docs.github.com](https://docs.github.com/en/copilot) |
+| **HeyGen** | Documented remaining-quota endpoint; you create the key. | [docs.heygen.com](https://docs.heygen.com/reference/remaining-quota) |
+| **Kling** | Documented account costs endpoint; you create the key. | [app.klingai.com](https://app.klingai.com/global/dev/document-api) |
+| **Leonardo.ai** | Documented /me endpoint returns token balance; you create the key. | [docs.leonardo.ai](https://docs.leonardo.ai/reference/getuserself) |
+| **Poe** | Documented points-balance endpoint; you create the key. | [creator.poe.com](https://creator.poe.com/docs/external-applications/openai-compatible-api) |
+| **Recraft** | Documented users/me endpoint; you create the key. | [www.recraft.ai](https://www.recraft.ai/docs) |
+| **Z.ai** | Documented quota endpoint with 5h/weekly/monthly windows. | [docs.z.ai](https://docs.z.ai/) |
 
 ### Manual entry
 
 No reachable usage endpoint — probed and confirmed, not assumed.
 You enter the numbers and they're labelled `manual`.
 
-**Gemini**, **Higgsfield**, **Lovable**, **Replit**, **v0**.
+**Descript**, **Gemini**, **Higgsfield**, **Lovable**, **Luma**, **Replit**, **v0**.
 
 #### Deliberately not read
 
@@ -261,8 +269,10 @@ A quota number isn't worth someone's account.
 
 | Platform | Why | Source |
 |---|---|---|
+| **Bolt.new** | StackBlitz terms forbid access by "automated tool (e.g., robots, spiders)". | [bolt.new](https://bolt.new/terms) |
 | **Midjourney** | Midjourney prohibits automated access outright — "automating interactions with Midjourney service is strictly prohibited", listed as one of four Community Guidelines rules, enforced with account blocks. aiquota will not read it for you. | [docs.midjourney.com](https://docs.midjourney.com/hc/en-us/articles/32013696484109-Community-Guidelines) |
 | **Suno** | Suno's terms forbid "any data mining, robots, scraping, or similar data gathering or extraction methods" (clause 13). Reading the billing endpoint on a schedule is exactly that. | [suno.com](https://suno.com/legal/terms) |
+| **Udio** | Terms forbid "any automated process of any sort to query, access, retrieve, scrape, data-mine" the service. | [www.udio.com](https://www.udio.com/terms) |
 
 Anything not listed: choose "Something else…" in the picker.
 

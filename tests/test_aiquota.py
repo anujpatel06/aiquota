@@ -1332,6 +1332,136 @@ class TestProhibitedProviders(Base):
                     f"{py.name} still references {frag}")
 
 
+class TestKeyBalanceAdapters(Base):
+    """Documented, key-authenticated balance APIs.
+
+    The safest class in the catalog: the provider publishes the endpoint and
+    the user creates the key. Every endpoint was probed unauthenticated and
+    answered 401 with a JSON error, so the routes are real.
+    """
+
+    PROVIDERS = ("deepseek", "poe", "fal", "heygen", "leonardo", "recraft",
+                 "kling", "zai")
+
+    def _ad(self, name):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        return registry()[name]
+
+    def test_all_registered_and_key_based(self):
+        from aiquota.login_policy import policy_for
+        for n in self.PROVIDERS:
+            ad = self._ad(n)
+            self.assertTrue(getattr(ad, "usage_url", "").startswith("https://"), n)
+            self.assertTrue(getattr(ad, "api_key_label", ""), f"{n}: no label")
+            self.assertEqual(policy_for(n)[0], "own-credential", n)
+
+    def test_unconfigured_without_a_key(self):
+        for n in self.PROVIDERS:
+            self.assertEqual(self._ad(n).probe({"_key": n}).tier,
+                             "unconfigured", n)
+
+    def test_deepseek_parses_documented_shape(self):
+        ad = self._ad("deepseek")
+        body = {"is_available": True, "balance_infos": [
+            {"currency": "USD", "total_balance": "12.34"}]}
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, body)):
+            r = ad.probe({"_key": "deepseek", "api_key": "x"})
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.extra["balance"], 12.34)
+
+    def test_heygen_derives_a_meter_only_when_total_is_known(self):
+        ad = self._ad("heygen")
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, {"data": {"remaining_quota": 30,
+                                                     "used_quota": 70}})):
+            r = ad.probe({"_key": "heygen", "api_key": "x"})
+        self.assertEqual(r.windows[0].used_pct, 70.0)
+
+        # No used_quota -> no invented percentage.
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, {"data": {"remaining_quota": 30}})):
+            r2 = ad.probe({"_key": "heygen", "api_key": "x"})
+        self.assertEqual(r2.windows, [])
+        self.assertIn("30", r2.note or "")
+
+    def test_poe_reports_points_without_faking_a_percentage(self):
+        """Poe publishes no cap via API, so a meter would be a guess."""
+        ad = self._ad("poe")
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, {"current_point_balance": 45000})):
+            r = ad.probe({"_key": "poe", "api_key": "x"})
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows, [])
+        self.assertIn("45,000", r.note)
+
+    def test_revoked_key_says_so(self):
+        ad = self._ad("deepseek")
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(401, {})):
+            r = ad.probe({"_key": "deepseek", "api_key": "x"})
+        self.assertEqual(r.tier, "error")
+        self.assertIn("revoked", r.error)
+
+
+class TestChatGPTConsumerLimits(Base):
+    """Feature credits from conversation/init.
+
+    Deep Research, image generation and friends are readable. Plain chat
+    messages are NOT reported by any endpoint — every extension claiming
+    "X of Y messages left" counts locally against a hard-coded plan table.
+    aiquota must not do that.
+    """
+
+    def test_parses_limits_progress(self):
+        from aiquota.adapters.chatgpt import _consumer_limits
+        body = {"limits_progress": [
+            {"feature_name": "deep_research", "remaining": 25,
+             "reset_after": "2026-06-07T18:34:14Z"},
+            {"feature_name": "image_gen", "remaining": 68,
+             "reset_after": None},
+        ]}
+        with mock.patch("aiquota.adapters.chatgpt.get_json",
+                        return_value=(200, body)):
+            code, feats = _consumer_limits("tok", "acct")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(feats), 2)
+        self.assertEqual(feats[0]["feature"], "deep_research")
+        self.assertEqual(feats[0]["remaining"], 25)
+
+    def test_missing_or_malformed_entries_are_skipped(self):
+        from aiquota.adapters.chatgpt import _consumer_limits
+        body = {"limits_progress": [
+            {"feature_name": "ok", "remaining": 5},
+            {"feature_name": "no_count"},          # no remaining
+            {"remaining": 3},                      # no name
+            "garbage",
+        ]}
+        with mock.patch("aiquota.adapters.chatgpt.get_json",
+                        return_value=(200, body)):
+            _code, feats = _consumer_limits("tok", None)
+        self.assertEqual([f["feature"] for f in feats], ["ok"])
+
+    def test_non_200_returns_nothing(self):
+        from aiquota.adapters.chatgpt import _consumer_limits
+        with mock.patch("aiquota.adapters.chatgpt.get_json",
+                        return_value=(403, None)):
+            code, feats = _consumer_limits("tok", None)
+        self.assertEqual(code, 403)
+        self.assertEqual(feats, [])
+
+    def test_no_chat_message_estimate_anywhere(self):
+        """Guard against ever inventing a 'messages left' number."""
+        import pathlib
+        src = (pathlib.Path(__file__).parent.parent /
+               "aiquota" / "adapters" / "chatgpt.py").read_text()
+        for bad in ("MESSAGE_CAP", "PLAN_LIMITS", "messages_left"):
+            self.assertNotIn(bad, src,
+                             "chat message counts are not readable; "
+                             "do not estimate them")
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

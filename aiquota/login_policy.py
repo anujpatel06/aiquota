@@ -105,6 +105,55 @@ LOGIN_POLICY = {
         "billing endpoint on a schedule is exactly that.",
         "https://suno.com/legal/terms",
     ),
+    # --- documented, key-authenticated balance APIs ---
+    # The safest class in the catalog: the provider publishes the endpoint,
+    # you create the key yourself in their dashboard, and reading your own
+    # balance is what the endpoint is for. Each was probed unauthenticated
+    # and answered 401 with a JSON error (2026-09-09), so the routes are real.
+    "deepseek": ("own-credential",
+        "Documented balance endpoint; you create the key.",
+        "https://api-docs.deepseek.com/api/get-user-balance"),
+    "poe": ("own-credential",
+        "Documented points-balance endpoint; you create the key.",
+        "https://creator.poe.com/docs/external-applications/openai-compatible-api"),
+    "fal": ("own-credential",
+        "Documented billing endpoint; you create the key.",
+        "https://docs.fal.ai/"),
+    "heygen": ("own-credential",
+        "Documented remaining-quota endpoint; you create the key.",
+        "https://docs.heygen.com/reference/remaining-quota"),
+    "leonardo": ("own-credential",
+        "Documented /me endpoint returns token balance; you create the key.",
+        "https://docs.leonardo.ai/reference/getuserself"),
+    "recraft": ("own-credential",
+        "Documented users/me endpoint; you create the key.",
+        "https://www.recraft.ai/docs"),
+    "kling": ("own-credential",
+        "Documented account costs endpoint; you create the key.",
+        "https://app.klingai.com/global/dev/document-api"),
+    "zai": ("own-credential",
+        "Documented quota endpoint with 5h/weekly/monthly windows.",
+        "https://docs.z.ai/"),
+    # --- providers that prohibit automated access ---
+    # Same class as Midjourney and Suno: their terms forbid automated or
+    # scripted access, with no carve-out for reading your own account. An
+    # adapter for these would put the user's account at risk, so none exists.
+    "udio": ("manual",
+        "Terms forbid \"any automated process of any sort to query, access, "
+        "retrieve, scrape, data-mine\" the service.",
+        "https://www.udio.com/terms"),
+    "luma": ("manual",
+        "Terms allow automated access only via means \"expressly authorized "
+        "by Luma's Documentation\", and no balance endpoint is documented.",
+        "https://lumalabs.ai/legal/tos"),
+    "descript": ("manual",
+        "Terms ban scraping and building applications that interact with the "
+        "service without prior written consent.",
+        "https://www.descript.com/terms"),
+    "bolt": ("manual",
+        "StackBlitz terms forbid access by \"automated tool (e.g., robots, "
+        "spiders)\".",
+        "https://bolt.new/terms"),
 }
 
 DEFAULT = ("manual", "No public quota API; values are entered by hand.", "")

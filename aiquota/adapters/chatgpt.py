@@ -83,6 +83,56 @@ def _account_from_jwt(jwt: Optional[str]) -> Optional[str]:
     return d.get("chatgpt_account_id") or None
 
 
+def _consumer_limits(token: str, account_id: Optional[str]):
+    """Feature credits for a consumer ChatGPT plan.
+
+    POST /backend-api/conversation/init returns a `limits_progress` array —
+    absolute remaining counts for Deep Research, image generation, file
+    uploads and whatever else the account has. It creates no conversation and
+    spends no quota.
+
+    Plain chat/GPT-5 messages are NOT in there. Nothing readable reports them:
+    every extension claiming "X of Y messages left" counts locally in the tab
+    against a hard-coded plan table. aiquota shows what the server actually
+    says and stays quiet about the rest.
+
+    Returns (status, list) — the list is empty when the account has no
+    metered features.
+    """
+    body = json.dumps({
+        "gizmo_id": None, "requested_default_model": None,
+        "conversation_id": None, "timezone_offset_min": 0,
+        "system_hints": [],
+    }).encode()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Origin": "https://chatgpt.com",
+        "Referer": "https://chatgpt.com/",
+        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/152.0.0.0 Safari/537.36"),
+    }
+    if account_id:
+        headers["ChatGPT-Account-Id"] = account_id
+    code, data = get_json("https://chatgpt.com/backend-api/conversation/init",
+                          headers=headers, data=body)
+    if code != 200 or not isinstance(data, dict):
+        return code, []
+    out = []
+    for item in data.get("limits_progress") or []:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("feature_name")
+        rem = item.get("remaining")
+        if not name or rem is None:
+            continue
+        out.append({"feature": str(name), "remaining": rem,
+                    "resets_at": item.get("reset_after")})
+    return code, out
+
+
 @register
 class ChatGPTAdapter(Adapter):
     name = "chatgpt"
@@ -173,6 +223,27 @@ class ChatGPTAdapter(Adapter):
                 r.extra["credits"] = cr["balance"]
         if rl.get("limit_reached"):
             r.extra["limit_reached"] = True
+
+        # Consumer feature credits — Deep Research, image generation and
+        # friends. Separate meter from the Codex windows above, and often the
+        # only thing a Plus subscriber actually cares about.
+        if conf.get("consumer_limits", True):
+            try:
+                _c, feats = _consumer_limits(tok, acct)
+            except Exception:
+                feats = []
+            for f in feats:
+                label = f["feature"].replace("_", " ").title()
+                r.extra[f"{f['feature']}_remaining"] = f["remaining"]
+                # These are absolute counts with no published cap, so they are
+                # reported as a number, never as a percentage of a guess.
+                r.extra.setdefault("features", []).append(
+                    f"{label}: {f['remaining']}")
+            if feats:
+                r.extra["features_note"] = (
+                    "remaining counts; plain chat messages are not reported "
+                    "by any endpoint")
+
         if not r.windows:
             r.note = "No usage windows returned (plan may be unlimited)"
         return r

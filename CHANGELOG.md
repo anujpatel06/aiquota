@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.0 — 2026-09-09
+
+Coverage: 16 → 28 platforms.
+
+### Added — 8 providers with documented, key-authenticated balance APIs
+DeepSeek, Poe, fal.ai, HeyGen, Leonardo.ai, Recraft, Kling, Z.ai.
+
+The safest class in the catalog: the provider publishes the endpoint, you
+create the key in their own dashboard, and reading your balance is what the
+endpoint is for. Every route was probed unauthenticated and answered 401
+with a JSON error, so none of them are guesses.
+
+### Added — consumer ChatGPT feature credits
+Deep Research, image generation, file uploads and whatever else your account
+meters, via `limits_progress` on `/backend-api/conversation/init`. Creates no
+conversation and spends no quota.
+
+Plain chat/GPT-5 message counts are **not** included, because no endpoint
+reports them. Every extension claiming "X of Y messages left" counts locally
+against a hard-coded plan table. A test now fails if that estimate ever
+appears here.
+
+### Added — Homebrew tap
+```
+brew install anujpatel06/aiquota/aiquota
+```
+
+### Excluded on ToS grounds
+Udio, Luma, Descript and Bolt.new join Midjourney and Suno as manual-entry
+only. Each prohibits automated access in terms with no carve-out for reading
+your own account. Reasons and source URLs ship in the README.
+
 ## 0.2.1 — 2026-09-09
 
 **Removed Midjourney and Suno sign-in.** Both adapters worked. Both are gone.
