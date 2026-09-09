@@ -13,7 +13,7 @@
 export const refreshFrequency = 300000; // 5 min — each refresh costs ~1 Haiku token
 
 export const command =
-  "PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH aiquota --json --ttl 240 2>/dev/null || echo '{}'";
+  "PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH aiquota --json --logos --ttl 240 2>/dev/null || echo '{}'";
 
 // Übersicht widgets are click-through by default: the container ignores the
 // mouse so the desktop stays usable. Interactive elements opt back in with
@@ -98,7 +98,34 @@ export const className = `
   }
 
   .srow {
-    display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  /* Platform logo: small rounded tile, like an app icon in a macOS list */
+  .logo {
+    width: 18px; height: 18px; border-radius: 5px; flex: none;
+    object-fit: contain; padding: 2px;
+    background: rgba(255, 255, 255, 0.10);
+  }
+  @media (prefers-color-scheme: light) {
+    .logo { background: rgba(0, 0, 0, 0.06); }
+  }
+  .logo-ph {
+    width: 18px; height: 18px; border-radius: 5px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    background: rgba(255, 255, 255, 0.10); color: rgba(255,255,255,0.55);
+  }
+  @media (prefers-color-scheme: light) {
+    .logo-ph { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.45); }
+  }
+  /* Tiny live/error dot, now overlaid at the logo's corner */
+  .status {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    margin-left: -13px; margin-top: 12px;
+    box-shadow: 0 0 0 1.5px rgba(28,28,30,0.9);
+  }
+  @media (prefers-color-scheme: light) {
+    .status { box-shadow: 0 0 0 1.5px rgba(255,255,255,0.9); }
   }
   .sname { font-size: 13px; font-weight: 590; letter-spacing: -0.01em; }
   .splan {
@@ -210,10 +237,29 @@ const tone = (p) => (p >= 85 ? SYS_RED : p >= 60 ? SYS_ORANGE : SYS_GREEN);
 const dotColor = (t) =>
   t === "live" ? SYS_GREEN : t === "error" ? SYS_RED : SYS_GRAY;
 
+// Run a shell command. Übersicht injects `run` into the render scope, but a
+// bare `typeof run` throws a ReferenceError in some scopes and kills the click
+// silently — so try every shape, then fall back to POSTing Übersicht's own
+// /run/ endpoint, which is what run() does internally.
 const shell = (cmd) => {
-  const exec = typeof run === "function" ? run : window.run;
-  if (typeof exec !== "function") return;
-  exec(`PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH; ${cmd}`);
+  const full =
+    `PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH; ` +
+    `echo "$(date) ${cmd}" >> "$HOME/.cache/aiquota/clicks.log" 2>/dev/null; ` +
+    cmd;
+
+  let exec = null;
+  try { if (typeof run === "function") exec = run; } catch (e) {}
+  if (!exec && typeof window !== "undefined" && typeof window.run === "function") {
+    exec = window.run;
+  }
+  if (exec) {
+    try { exec(full); return; } catch (e) {}
+  }
+
+  // Last resort: Übersicht's HTTP API, same origin as the widget page.
+  try {
+    fetch("/run/", { method: "POST", body: full }).catch(() => {});
+  } catch (e) {}
 };
 
 // ---- dragging -------------------------------------------------------
@@ -377,7 +423,17 @@ export const render = ({ output }) => {
         return (
           <div className="svc" key={i}>
             <div className="srow">
-              <span style={{ color: dotColor(s.tier), fontSize: "9px" }}>●</span>
+              {s.logo ? (
+                <img className="logo" src={s.logo} alt="" />
+              ) : (
+                <div className="logo-ph">
+                  {(s.service || "?").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span
+                className="status"
+                style={{ background: dotColor(s.tier) }}
+              />
               <span className="sname">{s.service}</span>
               {s.plan && s.plan !== s.service ? (
                 <span className="splan">{s.plan}</span>

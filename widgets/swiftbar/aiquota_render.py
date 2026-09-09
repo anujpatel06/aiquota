@@ -11,7 +11,7 @@ TIER = {"live": "●", "manual": "○", "error": "⚠", "unconfigured": "○"}
 def main():
     try:
         raw = subprocess.run(
-            ["aiquota", "--json", "--ttl", "240"],
+            ["aiquota", "--json", "--logos", "--ttl", "240"],
             capture_output=True, text=True, timeout=90).stdout
         data = json.loads(raw)
     except FileNotFoundError:
@@ -59,7 +59,13 @@ def main():
         head = "%s %s" % (mark, name)
         if plan and plan != name:
             head += " — %s" % plan
-        print("%s | size=13" % head)
+        # SwiftBar renders base64 PNGs inline via image=; show the platform
+        # logo beside the name when the CLI supplied one.
+        logo = s.get("logo") or ""
+        if logo.startswith("data:image/png;base64,"):
+            print("%s | size=13 image=%s" % (head, logo.split(",", 1)[1]))
+        else:
+            print("%s | size=13" % head)
 
         for w in s.get("windows", []):
             p = float(w["used_pct"])

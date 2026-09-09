@@ -8,7 +8,8 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from .core import (ERROR, LIVE, LOCAL, MANUAL, UNCONFIGURED, collect,
+from .core import (ERROR, LIVE, LOCAL, MANUAL, UNCONFIGURED, attach_logos,
+                   collect,
                    config_path, load_adapters, load_config, registry,
                    save_config, user_adapter_dir)
 
@@ -146,6 +147,8 @@ def render_compact(d: dict) -> str:
 
 def cmd_status(a) -> int:
     d = collect(only=a.service or None, force=a.refresh, ttl=a.ttl)
+    if getattr(a, "logos", False):
+        d = attach_logos(d)
     if a.json:
         json.dump(d, sys.stdout, indent=2)
         print()
@@ -532,6 +535,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true")
     s.add_argument("--compact", action="store_true", help="one line for a status bar")
     s.add_argument("--html", metavar="PATH", help="also write an HTML widget")
+    s.add_argument("--logos", action="store_true",
+                   help="include each service's logo as a data URI (for widgets)")
     s.add_argument("-r", "--refresh", action="store_true", help="bypass cache")
     s.add_argument("--ttl", type=int, default=300, help="cache seconds (default 300)")
     s.add_argument("--exit-code", action="store_true",

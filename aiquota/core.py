@@ -252,6 +252,26 @@ def _write_cache(c: dict) -> None:
 
 # ------------------------------------------------------------- collect
 
+def attach_logos(data: dict) -> dict:
+    """Embed each service's logo as a data URI, for UIs that render icons.
+
+    Opt-in (`--logos`): the bundle is ~40KB of base64, which has no business
+    riding along on every scripted `--json` call.
+    """
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "assets", "logos.json")
+        with open(path) as f:
+            logos = json.load(f)
+    except Exception:
+        return data
+    for s in data.get("services", []):
+        uri = logos.get(s.get("name", ""))
+        if uri:
+            s["logo"] = uri
+    return data
+
+
 def collect(only: Optional[List[str]] = None, force: bool = False,
             ttl: int = 300) -> dict:
     """Probe configured services, honouring a TTL cache.
