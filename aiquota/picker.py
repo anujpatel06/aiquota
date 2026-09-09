@@ -247,7 +247,18 @@ def _handle_choice(cfg, reg, e):
                     f"Set it up first:\n{e['login']}\n\n"
                     "Then open this again.", ok_label="OK")
             return 0
-        f = found[0]
+        # Let the user pick WHICH account, when more than one is on the Mac.
+        # Using found[0] silently is the same "don't assume" mistake as
+        # borrowing a credential without asking.
+        if len(found) > 1:
+            labels = [f"{c['source']} — {c['detail']}" for c in found]
+            picked = choose(labels, f"Which {e['name']} account?")
+            if picked is None:
+                return 0
+            f = found[labels.index(picked)]
+        else:
+            f = found[0]
+
         cost = f"\n\nNote: {ad.cost_note}" if ad and ad.cost_note else ""
         if not confirm(f"Link {e['name']}?\n\n"
                        f"aiquota will read:\n{f['source']}\n\n"
@@ -256,9 +267,9 @@ def _handle_choice(cfg, reg, e):
         entry = cfg["services"].get(key, {})
         entry.update({"adapter": e["adapter"], "enabled": True})
         entry.update(f.get("config") or {})
-        plan = ask(f"Plan label for {e['name']}? (optional)", "")
-        if plan:
-            entry["plan"] = plan
+        # No "plan label?" prompt — the adapter reports the real plan from
+        # the provider. Asking the user to type one was busywork that
+        # produced a worse answer than the API already gives us.
         cfg["services"][key] = entry
         save_config(cfg)
         notify(f"Linked {e['name']}")

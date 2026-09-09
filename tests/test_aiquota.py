@@ -1063,6 +1063,63 @@ class TestRemoveUI(Base):
             remove_ui.remove("claude")
         refresh.assert_not_called()
 
+    def test_linking_does_not_ask_for_a_plan_label(self):
+        """The provider reports the plan; don't make the user type one.
+
+        Regression: after confirming a link, the picker asked "Plan label
+        for Claude? (optional)" — busywork whose answer was worse than what
+        the adapter already reads from the API.
+        """
+        from aiquota import picker
+        from aiquota.core import load_adapters, registry
+        from aiquota.catalog import by_key
+        load_adapters()
+
+        fake = [{"source": "~/.x", "detail": "a token",
+                 "config": {"token_files": ["~/.x"]}}]
+        cfg = {"services": {}}
+
+        def boom(*a, **k):
+            raise AssertionError("asked the user to type something")
+
+        with mock.patch.object(picker, "ask", boom), \
+             mock.patch.object(picker, "confirm", return_value=True), \
+             mock.patch.object(picker, "notify"), \
+             mock.patch.object(picker, "save_config"), \
+             mock.patch.object(type(registry()["claude"]), "detect",
+                               return_value=fake):
+            rc = picker._handle_choice(cfg, registry(), by_key("claude"))
+        self.assertEqual(rc, 0)
+        self.assertIn("claude", cfg["services"])
+
+    def test_multiple_credentials_let_the_user_choose(self):
+        """Two accounts on one Mac must not be resolved by picking [0]."""
+        from aiquota import picker
+        from aiquota.core import load_adapters, registry
+        from aiquota.catalog import by_key
+        load_adapters()
+
+        fake = [{"source": "~/.a", "detail": "work", "config": {"token": "a"}},
+                {"source": "~/.b", "detail": "personal",
+                 "config": {"token": "b"}}]
+        cfg = {"services": {}}
+        seen = {}
+
+        def fake_choose(options, prompt):
+            seen["options"] = options
+            return options[1]          # pick the second account
+
+        with mock.patch.object(picker, "choose", fake_choose), \
+             mock.patch.object(picker, "confirm", return_value=True), \
+             mock.patch.object(picker, "notify"), \
+             mock.patch.object(picker, "save_config"), \
+             mock.patch.object(type(registry()["claude"]), "detect",
+                               return_value=fake):
+            picker._handle_choice(cfg, registry(), by_key("claude"))
+
+        self.assertEqual(len(seen["options"]), 2)
+        self.assertEqual(cfg["services"]["claude"]["token"], "b")
+
     def test_widget_passes_one_plain_argument(self):
         """The JSX must not rebuild nested AppleScript."""
         import pathlib
