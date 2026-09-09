@@ -312,11 +312,31 @@ struct AIQuotaBarApp: App {
         MenuBarExtra {
             MenuView(model: model)
         } label: {
-            // A label with no glyph can render as zero-width. Always show
-            // something, even before the first reading lands.
-            Text(model.services.isEmpty && model.lastError == nil
-                 ? "…" : menuTitle(model.services))
+            // An icon, not just a number. A bare "67%" sitting among a dozen
+            // system icons is indistinguishable from a battery reading — the
+            // first build shipped without one and was genuinely unfindable.
+            // The gauge fills as quota is consumed, so the glyph itself
+            // carries the reading even at a glance.
+            HStack(spacing: 3) {
+                Image(systemName: gaugeSymbol(model.services))
+                Text(model.services.isEmpty && model.lastError == nil
+                     ? "…" : menuTitle(model.services))
+            }
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// Pick a gauge glyph that reflects how full the worst window is, so the icon
+/// is informative before you read the number.
+func gaugeSymbol(_ services: [Service]) -> String {
+    let live = services.filter { $0.tier == "live" }
+    guard let worst = live.compactMap({ $0.headline })
+        .max(by: { $0.usedPct < $1.usedPct })
+    else { return "gauge.with.dots.needle.bottom.0percent" }
+    switch worst.usedPct {
+    case ..<34:  return "gauge.with.dots.needle.bottom.0percent"
+    case ..<67:  return "gauge.with.dots.needle.bottom.50percent"
+    default:     return "gauge.with.dots.needle.bottom.100percent"
     }
 }

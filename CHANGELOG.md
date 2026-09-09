@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.1 — 2026-09-09
+
+### Fixed: the menu bar app was invisible
+It ran, read real data and rendered — but the label was a bare number with no
+icon, which among a dozen system icons is indistinguishable from a battery
+reading. Reported as "I am not able to see the menu bar", and correctly so.
+
+Now shows a gauge glyph that fills as quota is consumed, so the icon carries
+the reading before you read the digits.
+
+This also caught a mistake in how 0.5.0 was verified: quitting SwiftBar left a
+percentage on screen and that was taken as proof the native app worked. The
+honest test is running each one alone, with a control capture where neither is
+running. Done that way, the app is confirmed: nothing running -> no
+percentage; AIQuotaBar alone -> gauge + percentage matching the CLI.
+
 ## 0.5.0 — 2026-09-09
 
 The four gaps found by reading CodexBar's source, closed.
