@@ -134,29 +134,13 @@ export const className = `
   .splan {
     font-size: 11px; color: rgba(255, 255, 255, 0.45);
   }
-  .sbig {
-    margin-left: auto;
-    font-size: 22px; font-weight: 600; letter-spacing: -0.03em;
-    font-variant-numeric: tabular-nums; line-height: 1;
-    text-align: right;
-  }
-  /* The headline is the WORST window, not a fixed one — say which, so an
-     18% that came from the 7-day meter can't be mistaken for the 5-hour. */
-  .sbiglab {
-    display: block; margin-top: 3px;
-    font-size: 9px; font-weight: 500; letter-spacing: 0;
-    color: rgba(255, 255, 255, 0.38);
-  }
-  @media (prefers-color-scheme: light) {
-    .sbiglab { color: rgba(0, 0, 0, 0.38); }
-  }
 
   /* Remove control: hidden until the card is hovered, so the widget stays
      calm, but discoverable without opening a terminal. */
   .del {
     pointer-events: auto; cursor: pointer;
     width: 18px; height: 18px; flex: none;
-    margin-left: 6px; border: none; padding: 0;
+    margin-left: auto; border: none; padding: 0;
     border-radius: 50%; opacity: 0;
     font-size: 12px; line-height: 1;
     background: rgba(255, 255, 255, 0.12);
@@ -474,10 +458,9 @@ export const render = ({ output }) => {
       {services.map((s, i) => {
         const ex = s.extra || {};
         const wins = s.windows || [];
-        // Headline number = the window under most pressure.
-        const peak = wins.length
-          ? wins.reduce((a, b) => (Number(b.used_pct) > Number(a.used_pct) ? b : a))
-          : null;
+        // No headline number: every window prints its own percentage just
+        // below, so repeating the worst one beside the name said nothing new
+        // and made the row noisy.
 
         return (
           <div className="svc" key={i}>
@@ -496,12 +479,6 @@ export const render = ({ output }) => {
               <span className="sname">{s.service}</span>
               {s.plan && s.plan !== s.service ? (
                 <span className="splan">{s.plan}</span>
-              ) : null}
-              {peak ? (
-                <span className="sbig" style={{ color: tone(Number(peak.used_pct)) }}>
-                  {Math.round(Number(peak.used_pct))}%
-                  <span className="sbiglab">{peak.label}</span>
-                </span>
               ) : null}
               <button
                 className="del"
