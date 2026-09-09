@@ -1240,6 +1240,71 @@ class TestGuiDialog(Base):
         osa.assert_called_once()
 
 
+class TestInstallability(Base):
+    """What a stranger gets from `pip install aiquota`.
+
+    The widgets used to live only in the git repo, so a released install had
+    a CLI and nothing else — the documented setup was "clone the repo and
+    copy four files by hand", which nobody does.
+    """
+
+    def test_widget_files_ship_inside_the_package(self):
+        from aiquota import install_widget as iw
+        self.assertTrue(os.path.isdir(iw.SRC),
+                        "widgets must ship in the package, not just the repo")
+        for f in ("aiquota.jsx", "aiquota.5m.sh", "aiquota_render.py",
+                  "add_account.sh"):
+            self.assertTrue(os.path.exists(os.path.join(iw.SRC, f)), f)
+
+    def test_shipped_widget_matches_the_repo(self):
+        """A stale packaged copy would install a different widget."""
+        import pathlib
+        root = pathlib.Path(__file__).parent.parent
+        shipped = (root / "aiquota/widgets/aiquota.jsx").read_text()
+        built = (root / "widgets/ubersicht/aiquota.jsx").read_text()
+        self.assertEqual(shipped, built,
+                         "run scripts/bake_logos.py to sync the package copy")
+
+    def test_shipped_widget_has_logos_baked_in(self):
+        import pathlib
+        root = pathlib.Path(__file__).parent.parent
+        s = (root / "aiquota/widgets/aiquota.jsx").read_text()
+        self.assertIn("const LOGOS", s)
+        self.assertNotIn("--logos", s,
+                         "widget payload must stay small; logos are baked in")
+
+    def test_missing_host_app_is_reported_not_ignored(self):
+        from aiquota import install_widget as iw
+        with mock.patch.object(iw.os.path, "exists", return_value=False):
+            ok, msg = iw.install_swiftbar()
+        self.assertFalse(ok)
+        self.assertIn("brew install", msg)
+
+    def test_non_macos_says_so(self):
+        from aiquota import install_widget as iw
+        with mock.patch.object(iw.sys, "platform", "linux"):
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                rc = iw.main([])
+        self.assertEqual(rc, 1)
+        self.assertIn("macOS-only", buf.getvalue())
+
+    def test_version_flag_works(self):
+        """People type --version first; it must not print help."""
+        from aiquota.cli import main
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            with self.assertRaises(SystemExit) as cm:
+                main(["--version"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("aiquota", buf.getvalue())
+
+    def test_install_widget_is_a_known_subcommand(self):
+        from aiquota.cli import build_parser
+        a = build_parser().parse_args(["install-widget", "menubar"])
+        self.assertEqual(a.which, "menubar")
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

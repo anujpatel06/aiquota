@@ -501,6 +501,12 @@ def cmd_unlink(a) -> int:
     return 0
 
 
+def cmd_install_widget(a) -> int:
+    """Put the widgets where SwiftBar and Übersicht look for them."""
+    from .install_widget import main as _install
+    return _install([a.which] if getattr(a, "which", None) else [])
+
+
 def cmd_doctor(a) -> int:
     load_adapters(verbose=True)
     cfg = load_config()
@@ -547,6 +553,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="aiquota", parents=[common],
         description="See how much of every AI subscription you've used, in one place.")
+    from . import __version__
+    p.add_argument("--version", action="version",
+                   version=f"aiquota {__version__}")
     sub = p.add_subparsers(dest="cmd")
 
     s = sub.add_parser("status", parents=[common],
@@ -609,6 +618,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     dr = sub.add_parser("doctor", parents=[common], help="diagnose configuration problems")
     dr.set_defaults(fn=cmd_doctor)
+
+    iw = sub.add_parser("install-widget", parents=[common],
+                        help="install the menu bar / desktop widgets")
+    iw.add_argument("which", nargs="?", choices=["menubar", "desktop"],
+                    help="default: both")
+    iw.set_defaults(fn=cmd_install_widget)
     return p
 
 
@@ -617,8 +632,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = build_parser()
 
     KNOWN = {"status", "add", "remove", "rm", "enable", "disable",
-             "set", "list", "adapters", "doctor", "link", "unlink"}
-    HELP = {"-h", "--help"}
+             "set", "list", "adapters", "doctor", "link", "unlink",
+             "install-widget"}
+    HELP = {"-h", "--help", "--version"}
 
     # `aiquota`, `aiquota --color always`, `aiquota claude` all mean "status".
     # Only inject when no real subcommand appears anywhere in argv.

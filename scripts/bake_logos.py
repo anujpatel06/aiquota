@@ -13,7 +13,6 @@ root = pathlib.Path("/Users/anujpatel/projects/aiquota")
 logos = json.load(open(root / "aiquota/assets/logos.json"))
 jsx = root / "widgets/ubersicht/aiquota.jsx"
 s = jsx.read_text()
-
 # 1. command: drop --logos, back to the small payload
 s = s.replace("aiquota --json --logos --ttl 240", "aiquota --json --ttl 240")
 
@@ -34,4 +33,16 @@ s = s.replace('<img className="logo" src={s.logo} alt="" />',
               '<img className="logo" src={LOGOS[s.name]} alt="" />')
 
 jsx.write_text(s)
+
+# Ship the BUILT widget inside the package. Without this the wheel would
+# carry a stale copy (or none), and `aiquota install-widget` would place a
+# widget that doesn't match the repo.
+import shutil
+pkg = root / "aiquota/widgets"
+pkg.mkdir(exist_ok=True)
+shutil.copyfile(jsx, pkg / "aiquota.jsx")
+for f in ("aiquota.5m.sh", "aiquota_render.py", "add_account.sh"):
+    shutil.copyfile(root / "widgets/swiftbar" / f, pkg / f)
+
 print(f"baked {len(logos)} logos into the widget ({round(len(block)/1024)} KB)")
+print(f"synced 4 widget files into {pkg.relative_to(root)}/")

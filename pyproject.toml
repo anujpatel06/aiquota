@@ -33,4 +33,4 @@ aiquota-remove = "aiquota.remove_ui:main"
 include = ["aiquota*"]
 
 [tool.setuptools.package-data]
-aiquota = ["assets/*.json"]
+aiquota = ["assets/*.json", "widgets/*"]

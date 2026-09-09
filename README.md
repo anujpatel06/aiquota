@@ -35,12 +35,36 @@ Higgsfield  Creator  [manual]
 ## Install
 
 ```bash
-pip install aiquota          # once published
-# or from source:
-git clone https://github.com/anujpatel06/aiquota && cd aiquota && pip install -e .
+uv tool install aiquota      # or: pipx install aiquota
+aiquota install-widget       # macOS: adds the menu bar + desktop widgets
 ```
 
-Python 3.8+. No other requirements.
+Then click **＋ Add an AI account** in the widget and sign in.
+
+<details>
+<summary>Other ways</summary>
+
+```bash
+pip install aiquota                 # into the current environment
+pip install git+https://github.com/anujpatel06/aiquota   # latest main
+```
+
+`uv tool` / `pipx` are recommended because they put `aiquota` on your PATH
+without touching your project environments.
+
+The widgets need one of these host apps — `install-widget` tells you which
+is missing rather than failing quietly:
+
+```bash
+brew install --cask swiftbar    # menu bar
+brew install --cask ubersicht   # desktop
+```
+
+Install just one with `aiquota install-widget menubar` or `… desktop`.
+</details>
+
+Python 3.8+, no dependencies. The CLI runs anywhere; the widgets are macOS
+only, and `install-widget` says so instead of pretending on Linux.
 
 ## Quick start
 
