@@ -11,6 +11,7 @@ Undocumented and private; may break without notice.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -54,9 +55,32 @@ def _auth(conf: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], str]:
         tok = t.get("access_token") or t.get("accessToken")
         acct = (t.get("account_id") or t.get("accountId")
                 or d.get("account_id") or d.get("accountId"))
+        if tok and not acct:
+            # account_id is frequently null in auth.json; the id_token carries
+            # it as a claim. Without it the usage endpoint answers for the
+            # wrong workspace (or refuses).
+            acct = _account_from_jwt(t.get("id_token") or tok)
         if tok:
             return tok, acct, f"borrowed from {raw}"
     return None, None, ""
+
+
+def _account_from_jwt(jwt: Optional[str]) -> Optional[str]:
+    """Pull chatgpt_account_id out of a JWT payload. No signature check —
+    this is reading our own local token for a routing hint, not trusting it."""
+    if not jwt or jwt.count(".") < 2:
+        return None
+    try:
+        payload = jwt.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        d = json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return None
+    for ns in ("https://api.openai.com/auth",):
+        v = d.get(ns)
+        if isinstance(v, dict) and v.get("chatgpt_account_id"):
+            return str(v["chatgpt_account_id"])
+    return d.get("chatgpt_account_id") or None
 
 
 @register

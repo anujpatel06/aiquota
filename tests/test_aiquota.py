@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stderr, redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -709,6 +710,111 @@ class TestLoginPolicy(Base):
         # No global state that could hold a session.
         for attr in ("SESSION", "COOKIES", "TOKEN"):
             self.assertFalse(hasattr(browser_login, attr))
+
+
+class TestClaudeProbeOrder(Base):
+    """Reading usage must not require an inference call.
+
+    Anthropic's Jan 2026 enforcement rejects subscription tokens used for
+    "other API requests" outside Claude Code. The /v1/messages header route
+    is exactly that traffic, and it also spends quota to measure quota, so
+    the read-only usage endpoint has to be tried first.
+    """
+
+    def _adapter(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        return registry()["claude"]
+
+    def test_usage_endpoint_is_tried_before_inference(self):
+        ad = self._adapter()
+        calls = []
+
+        def fake_usage(_self, conf, tok):
+            calls.append("usage")
+            from aiquota.core import LIVE, Window
+            r = ad.make(conf, tier=LIVE)
+            r.windows.append(Window(key="five_hour", label="5-hour session",
+                                    used_pct=12.0, resets_at=""))
+            return r
+
+        def fake_headers(_self, conf, tok):
+            calls.append("inference")
+            return ad.make(conf, tier="error")
+
+        with mock.patch.object(type(ad), "_via_oauth_usage", fake_usage), \
+             mock.patch.object(type(ad), "_via_headers", fake_headers):
+            r = ad.probe({"token": "x", "_key": "claude"})
+
+        self.assertEqual(calls, ["usage"],
+                         "must not make an inference call when usage works")
+        self.assertEqual(r.tier, "live")
+
+    def test_falls_back_when_token_lacks_scope(self):
+        """setup-token credentials are inference-only; fallback must remain."""
+        ad = self._adapter()
+        calls = []
+
+        def fake_usage(_self, conf, tok):
+            calls.append("usage")
+            r = ad.make(conf, tier="error")
+            r.error = "token lacks user:profile scope"
+            return r
+
+        def fake_headers(_self, conf, tok):
+            calls.append("inference")
+            from aiquota.core import LIVE
+            return ad.make(conf, tier=LIVE)
+
+        with mock.patch.object(type(ad), "_via_oauth_usage", fake_usage), \
+             mock.patch.object(type(ad), "_via_headers", fake_headers):
+            ad.probe({"token": "x", "_key": "claude"})
+        self.assertEqual(calls, ["usage", "inference"])
+
+    def test_usage_endpoint_only_never_falls_back(self):
+        ad = self._adapter()
+        calls = []
+        with mock.patch.object(type(ad), "_via_oauth_usage",
+                               lambda s, c, t: (calls.append("usage"),
+                                                ad.make(c, tier="error"))[1]), \
+             mock.patch.object(type(ad), "_via_headers",
+                               lambda s, c, t: (calls.append("inference"),
+                                                ad.make(c, tier="live"))[1]):
+            ad.probe({"token": "x", "usage_endpoint_only": True,
+                      "_key": "claude"})
+        self.assertEqual(calls, ["usage"])
+
+    def test_null_buckets_do_not_crash(self):
+        """Every window in the response may be null."""
+        ad = self._adapter()
+        body = {"five_hour": {"utilization": 35.0, "resets_at": None},
+                "seven_day": None, "seven_day_opus": None,
+                "extra_usage": {"used_credits": 250.0, "currency": "EUR"}}
+        with mock.patch("aiquota.adapters.claude.get_json",
+                        return_value=(200, body)):
+            r = ad._via_oauth_usage({"_key": "claude"}, "tok")
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(len(r.windows), 1)
+        self.assertEqual(r.windows[0].used_pct, 35.0)
+        self.assertEqual(r.windows[0].resets_at, "")
+        self.assertEqual(r.extra["extra_usage_spend"], 2.50)  # cents
+
+
+class TestChatGPTAccountId(Base):
+    def test_account_id_recovered_from_jwt(self):
+        """auth.json often has account_id: null; the claim is in the JWT."""
+        import base64 as b64
+        from aiquota.adapters.chatgpt import _account_from_jwt
+        payload = {"https://api.openai.com/auth":
+                   {"chatgpt_account_id": "acct-123"}}
+        raw = b64.urlsafe_b64encode(
+            json.dumps(payload).encode()).decode().rstrip("=")
+        self.assertEqual(_account_from_jwt(f"hdr.{raw}.sig"), "acct-123")
+
+    def test_malformed_jwt_returns_none(self):
+        from aiquota.adapters.chatgpt import _account_from_jwt
+        for bad in (None, "", "notajwt", "a.b", "a.!!!.c"):
+            self.assertIsNone(_account_from_jwt(bad))
 
 
 class TestHTML(Base):
