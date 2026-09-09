@@ -123,6 +123,14 @@ def render_text(d: dict, verbose: bool = False) -> str:
 
         if s.get("error"):
             lines.append("  " + C.red(s["error"]))
+            # A status code helps nobody; say what to do about it.
+            if s.get("failure_hint"):
+                lines.append(C.dim(f"  {s['failure_hint']}"))
+        # Money, when the provider reports it — a different question from
+        # quota, and the one a paying user usually cares about most.
+        cost = s.get("cost") or {}
+        if cost.get("human"):
+            lines.append("  " + C.bold(cost["human"]))
         if s.get("note") and (verbose or not s.get("windows")):
             lines.append(C.dim(f"  {s['note']}"))
         if verbose and ex.get("source"):
@@ -628,7 +636,49 @@ def build_parser() -> argparse.ArgumentParser:
     rf = sub.add_parser("refresh", parents=[common],
                         help="how often aiquota re-checks, and why")
     rf.set_defaults(fn=cmd_refresh)
+
+    sv = sub.add_parser("serve", parents=[common],
+                        help="local read-only HTTP API for other tools")
+    sv.add_argument("--port", type=int, default=6737)
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="default 127.0.0.1; you almost certainly want that")
+    sv.set_defaults(fn=cmd_serve)
     return p
+
+
+def cmd_serve(a) -> int:
+    """Serve readings over localhost so other tools can consume them.
+
+    Read-only by construction: there is no endpoint that changes configuration
+    or reveals a credential.
+    """
+    from .serve import Server
+
+    if a.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"{C.bold('Refusing')} to bind {a.host}.")
+        print("  This serves your account readings. Localhost only.")
+        return 2
+
+    try:
+        srv = Server(port=a.port, host=a.host,
+                     quiet=not getattr(a, "verbose", False))
+    except OSError as e:
+        print(f"Could not bind {a.host}:{a.port} — {e}")
+        print("  Something else may already be listening. Try --port 0.")
+        return 1
+
+    print(f"{C.bold('aiquota')} serving on {srv.url}")
+    print(f"  {srv.url}/usage      every configured service")
+    print(f"  {srv.url}/providers  what can be added, and how")
+    print("  read-only · localhost only · never serves credentials")
+    print("  Ctrl-C to stop")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        srv.stop()
+    return 0
 
 
 def cmd_refresh(a) -> int:
@@ -671,7 +721,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     KNOWN = {"status", "add", "remove", "rm", "enable", "disable",
              "set", "list", "adapters", "doctor", "link", "unlink",
-             "install-widget", "refresh"}
+             "install-widget", "refresh", "serve"}
     HELP = {"-h", "--help", "--version"}
 
     # `aiquota`, `aiquota --color always`, `aiquota claude` all mean "status".

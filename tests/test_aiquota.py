@@ -1712,6 +1712,145 @@ class TestParallelCollect(Base):
         self.assertIn("min(len(to_probe), 8)", src)
 
 
+class TestServe(Base):
+    """A localhost API so other tools consume aiquota instead of cloning it."""
+
+    def _srv(self):
+        from aiquota.serve import Server
+        s = Server(port=0).start_background()
+        self.addCleanup(s.stop)
+        return s
+
+    def _get(self, srv, path):
+        import urllib.request
+        r = urllib.request.urlopen(srv.url + path, timeout=5)
+        return r.status, r.read().decode(), dict(r.headers)
+
+    def test_health_reports_version(self):
+        from aiquota import __version__
+        code, body, _ = self._get(self._srv(), "/healthz")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body)["version"], __version__)
+
+    def test_usage_and_providers_return_json(self):
+        srv = self._srv()
+        for path in ("/usage", "/providers"):
+            code, body, hdrs = self._get(srv, path)
+            self.assertEqual(code, 200, path)
+            self.assertIn("application/json", hdrs["Content-Type"])
+            json.loads(body)
+
+    def test_providers_lists_the_whole_catalog_with_policy(self):
+        from aiquota.catalog import CATALOG
+        _c, body, _h = self._get(self._srv(), "/providers")
+        got = json.loads(body)["providers"]
+        self.assertEqual(len(got), len(CATALOG))
+        self.assertTrue(all(p.get("how") for p in got))
+
+    def test_unknown_service_is_404_not_a_crash(self):
+        import urllib.error
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self._get(self._srv(), "/usage/nope-not-real")
+        self.assertEqual(cm.exception.code, 404)
+
+    def test_no_endpoint_leaks_a_credential(self):
+        """The API serves readings. It must never serve secrets."""
+        from aiquota.core import load_config, save_config
+        cfg = load_config()
+        cfg.setdefault("services", {})["x"] = {
+            "adapter": "manual", "enabled": True,
+            "api_key": "sk-SUPERSECRET-DO-NOT-LEAK",
+        }
+        save_config(cfg)
+        srv = self._srv()
+        for path in ("/usage", "/providers", "/", "/healthz"):
+            _c, body, _h = self._get(srv, path)
+            self.assertNotIn("SUPERSECRET", body, f"{path} leaked a credential")
+
+    def test_binds_loopback_only(self):
+        srv = self._srv()
+        self.assertIn(srv.host, ("127.0.0.1", "localhost", "::1"))
+
+    def test_cli_refuses_a_public_bind(self):
+        """Serving your account readings to the LAN is never the intent."""
+        from aiquota.cli import main
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["serve", "--host", "0.0.0.0"])
+        self.assertEqual(rc, 2)
+        self.assertIn("Refusing", buf.getvalue())
+
+    def test_index_is_html(self):
+        _c, body, hdrs = self._get(self._srv(), "/")
+        self.assertIn("text/html", hdrs["Content-Type"])
+        self.assertIn("aiquota", body)
+
+
+class TestCost(Base):
+    """Money is a different question from quota."""
+
+    def test_balance_renders_without_inventing_a_limit(self):
+        from aiquota.core import Cost
+        c = Cost(balance=12.34, currency="USD")
+        self.assertIn("$12.34", c.human())
+        self.assertIsNone(c.used_pct, "no limit means no percentage")
+
+    def test_percentage_only_when_the_provider_stated_a_limit(self):
+        from aiquota.core import Cost
+        self.assertEqual(Cost(used=25, limit=100).used_pct, 25.0)
+        self.assertIsNone(Cost(used=25).used_pct)
+
+    def test_non_dollar_currencies_do_not_render_as_dollars(self):
+        from aiquota.core import Cost
+        self.assertNotIn("$", Cost(balance=5, currency="INR").human())
+
+    def test_empty_cost_renders_nothing(self):
+        from aiquota.core import Cost
+        self.assertEqual(Cost().human(), "")
+
+    def test_cost_survives_the_cache_roundtrip(self):
+        from aiquota.core import Cost, Result
+        r = Result(name="x", service="X", cost=Cost(balance=9.5))
+        back = Result.from_dict(r.to_dict())
+        self.assertIsNotNone(back.cost)
+        self.assertEqual(back.cost.balance, 9.5)
+
+    def test_serialised_cost_carries_a_human_string(self):
+        from aiquota.core import Cost, Result
+        d = Result(name="x", service="X",
+                   cost=Cost(balance=3.0)).to_dict()
+        self.assertIn("$3.00", d["cost"]["human"])
+
+    def test_adapters_with_money_report_it_as_cost(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        ad = registry()["deepseek"]
+        body = {"balance_infos": [{"currency": "USD", "total_balance": "7.5"}]}
+        with mock.patch("aiquota.adapters.key_balance.get_json",
+                        return_value=(200, body)):
+            r = ad.probe({"_key": "deepseek", "api_key": "x"})
+        self.assertIsNotNone(r.cost)
+        self.assertEqual(r.cost.balance, 7.5)
+
+
+class TestGovernanceDocs(Base):
+    """The promises in VISION.md are the ones tests enforce elsewhere."""
+
+    def test_vision_and_contributing_exist(self):
+        import pathlib
+        root = pathlib.Path(__file__).parent.parent
+        for f in ("VISION.md", "CONTRIBUTING.md"):
+            p = root / f
+            self.assertTrue(p.exists(), f"{f} missing")
+            self.assertGreater(len(p.read_text()), 500, f"{f} is a stub")
+
+    def test_vision_names_the_prohibited_providers(self):
+        import pathlib
+        txt = (pathlib.Path(__file__).parent.parent / "VISION.md").read_text()
+        for name in ("Midjourney", "Suno"):
+            self.assertIn(name, txt)
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

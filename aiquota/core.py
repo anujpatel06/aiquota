@@ -61,6 +61,50 @@ class Window:
 
 
 @dataclass
+class Cost:
+    """Money, as distinct from quota.
+
+    A percentage answers "how much of my allowance is gone". It cannot answer
+    "how much will I be billed" or "what's left on the card". Several
+    providers report a real balance in real currency, and flattening that into
+    a note string threw away the one number a paying user most wants.
+
+    `limit` is optional on purpose: prepaid balances have no cap, and a
+    percentage against an invented ceiling would be a lie.
+    """
+
+    used: Optional[float] = None        # spent this period
+    balance: Optional[float] = None     # remaining, for prepaid accounts
+    limit: Optional[float] = None       # cap, when the provider states one
+    currency: str = "USD"
+    period: str = ""                    # "month", "billing cycle", ...
+    resets_at: str = ""
+
+    @property
+    def used_pct(self) -> Optional[float]:
+        """Only meaningful when the provider actually stated a limit."""
+        if self.used is None or not self.limit:
+            return None
+        return round(self.used / self.limit * 100, 1)
+
+    def human(self) -> str:
+        sym = {"USD": "$", "EUR": "€", "GBP": "£"}.get(self.currency, "")
+        def money(v):
+            return f"{sym}{v:,.2f}" if sym else f"{v:,.2f} {self.currency}"
+        if self.balance is not None:
+            s = f"{money(self.balance)} left"
+        elif self.used is not None:
+            s = f"{money(self.used)} spent"
+        else:
+            return ""
+        if self.limit:
+            s += f" of {money(self.limit)}"
+        if self.period:
+            s += f" this {self.period}"
+        return s
+
+
+@dataclass
 class Result:
     name: str
     service: str
@@ -70,6 +114,9 @@ class Result:
     note: str = ""
     error: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
+    # Money, when the provider reports it. Separate from windows because
+    # spend and quota are different questions.
+    cost: Optional[Cost] = None
     # How much the number can be trusted, independent of whether it's live.
     # A live reading can still be percent-only (the provider reports 43% but
     # not 43-of-100), and a card should be able to say so rather than imply
@@ -87,12 +134,22 @@ class Result:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["windows"] = [asdict(w) for w in self.windows]
+        if self.cost is not None:
+            d["cost"] = asdict(self.cost)
+            d["cost"]["used_pct"] = self.cost.used_pct
+            d["cost"]["human"] = self.cost.human()
         return d
 
     @staticmethod
     def from_dict(d: dict) -> "Result":
         d = dict(d)
         d["windows"] = [Window(**w) for w in d.get("windows", [])]
+        c = d.get("cost")
+        if isinstance(c, dict):
+            known_c = {f.name for f in fields(Cost)}
+            d["cost"] = Cost(**{k: v for k, v in c.items() if k in known_c})
+        elif c is not None:
+            d["cost"] = None
         # Tolerate caches written by older versions that lack these fields.
         for k, default in (("confidence", "unknown"), ("failure_kind", ""),
                            ("failure_hint", "")):

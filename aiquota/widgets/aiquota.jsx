@@ -216,10 +216,16 @@ export const className = `
     font-size: 10.5px; color: rgba(255, 255, 255, 0.38);
     margin-top: 1px; line-height: 1.35;
   }
+  /* Money reads as a fact, not a warning — same weight as a percentage. */
+  .cost {
+    font-size: 11.5px; color: rgba(255, 255, 255, 0.82);
+    margin-top: 3px; font-variant-numeric: tabular-nums;
+  }
   @media (prefers-color-scheme: light) {
     .note { color: rgba(0, 0, 0, 0.42); }
     .warn { color: #C93400; }
     .hint { color: rgba(0, 0, 0, 0.38); }
+    .cost { color: rgba(0, 0, 0, 0.80); }
   }
 
   /* ---- footer / controls ------------------------------------------- */
@@ -545,6 +551,12 @@ export const render = ({ output }) => {
                   <div className="hint">{s.failure_hint}</div>
                 ) : null}
               </div>
+            ) : null}
+
+            {/* Money, when the provider reports it. A percentage can't answer
+                "what will I be billed" — this can. */}
+            {s.cost && s.cost.human ? (
+              <div className="cost">{s.cost.human}</div>
             ) : null}
 
             {/* Features the provider meters but doesn't cap — show the count,

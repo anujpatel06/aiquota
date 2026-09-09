@@ -1,44 +1,75 @@
 # Contributing
 
-Thanks for helping out. The most useful contribution is usually **a new adapter**.
+Read [VISION.md](VISION.md) first — it says what gets merged by default and
+what needs discussion. The honesty rules there are not style preferences;
+tests enforce them.
 
-## Adding a service
-
-You don't need to fork to try one — drop a `.py` file in
-`~/.config/aiquota/adapters/` and it loads automatically. When it works, move it
-to `aiquota/adapters/` and open a PR.
-
-See the adapter example in the README. The rules that matter:
-
-1. **Never raise from `probe()`.** Return `tier=ERROR` with a message a human
-   can act on. One broken adapter must not break the whole run.
-2. **Be honest about `tier`.** `LIVE` means you fetched it from the service.
-   `MANUAL` means a human typed it. `LOCAL` means you estimated it from logs.
-   Mislabelling this is the one thing that makes the tool worse than useless.
-3. **Declare `cost_note`** if probing spends quota or money, and say so in the
-   PR. Users deserve to know before they put it on a timer.
-4. **Stdlib only.** Use `adapters/_http.py`. No new dependencies.
-5. **Document the source.** If it's an undocumented endpoint, say where you
-   found it and note that it may break.
-
-## Tests
+## Setup
 
 ```bash
-python3 -m unittest discover -s tests -v
+git clone https://github.com/anujpatel06/aiquota
+cd aiquota
+python3 -m unittest discover -s tests    # ~1s, no network, no credentials
 ```
 
-Tests must not touch the network or read real credentials — set
-`AIQUOTA_NO_AUTODISCOVER=1` and use a temp `AIQUOTA_HOME` (see `tests/`).
-Add a case for any behaviour you change.
+No install step, no virtualenv needed to run tests, no dependencies to fetch.
+That's deliberate.
 
-## Reporting a broken adapter
+## Adding a provider
 
-These endpoints are undocumented and break without warning. When one does,
-open an issue with the output of:
+1. **Read their terms first.** Search for "automated", "scraping", "robots",
+   "data mining". If automated access is prohibited, the provider goes in the
+   catalog as `manual` with the clause quoted in `login_policy.py` — and no
+   adapter. This has already applied to six providers; it is not hypothetical.
+
+2. **Probe the endpoint unauthenticated** and record what you get:
+
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" https://api.example.com/v1/usage
+   ```
+
+   `401`/`403` with a JSON body means the route exists. `404` means you
+   guessed. Put the observed status and date in the adapter docstring.
+
+3. **Write the adapter.** Simplest case is a documented key-authenticated
+   balance — subclass `KeyBalanceAdapter` in `adapters/key_balance.py` and
+   implement `parse()`.
+
+4. **Add** a `catalog.py` entry, a `login_policy.py` entry with a citation
+   URL, and tests.
+
+5. **Regenerate docs:** `python3 scripts/gen_platform_table.py`. The README
+   table is generated so it cannot claim support that doesn't exist.
+
+## The rules tests enforce
+
+- A `manual` value can never render as `live`
+- Prohibited providers have no adapter and no endpoint URLs anywhere
+- No hard-coded plan tables to estimate "messages left" — if the provider
+  doesn't report it, we don't show it
+- `Result.from_dict` tolerates caches written by older versions
+- The packaged widget matches the repo widget
+
+If your change makes one of these fail, the test is probably right.
+
+## Before opening a PR
 
 ```bash
-aiquota doctor
-aiquota <service> --json -r
+python3 -m unittest discover -s tests
+bash scripts/verify_release.sh     # 9 checks incl. packaging and JSX
 ```
 
-Redact tokens before posting.
+Performance claims need a before/after measurement in the PR description.
+"7.8× with 8 providers at 0.4s each" is useful; "faster" isn't.
+
+## Consuming aiquota from another tool
+
+Don't fork it for this — there are two supported interfaces:
+
+```bash
+aiquota status --json      # one-shot
+aiquota serve              # localhost HTTP, read-only
+```
+
+Build your Raycast extension, tmux segment or Stream Deck plugin on those and
+we'll link it from the README.

@@ -26,7 +26,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from .. import failures
-from ..core import ERROR, LIVE, UNCONFIGURED, Adapter, Result, Window, register
+from ..core import (ERROR, LIVE, UNCONFIGURED, Adapter, Cost, Result, Window,
+                    register)
 from ._http import fmt_reset, get_json
 
 
@@ -97,9 +98,11 @@ class DeepSeekAdapter(KeyBalanceAdapter):
         if total is None:
             r.tier, r.error = ERROR, "no total_balance field"
             return r
-        cur = b.get("currency", "")
+        cur = b.get("currency") or "USD"
         r.extra["balance"] = total
-        r.note = f"{total:.2f} {cur}".strip()
+        # Prepaid balance in real money: a Cost, not a note string.
+        r.cost = Cost(balance=total, currency=cur)
+        r.note = r.cost.human()
         if d.get("is_available") is False:
             r.note += " — account not available"
         return r
@@ -154,7 +157,8 @@ class FalAdapter(KeyBalanceAdapter):
             r.tier, r.error = ERROR, "no credit balance in response"
             return r
         r.extra["credits"] = bal
-        r.note = f"${bal:,.2f} credits"
+        r.cost = Cost(balance=bal, currency="USD")
+        r.note = f"{r.cost.human()} in credits"
         return r
 
 

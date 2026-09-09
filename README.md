@@ -42,8 +42,23 @@ ChatGPT  ChatGPT (team)  [live]
 
 ```bash
 brew install anujpatel06/aiquota/aiquota
-aiquota install-widget       # macOS: adds the menu bar + desktop widgets
 ```
+
+Then pick a surface:
+
+```bash
+aiquota                      # the CLI, works anywhere
+aiquota install-widget       # macOS menu bar + desktop widgets
+aiquota serve                # localhost HTTP API for your own tools
+```
+
+There's also a **native menu bar app** that needs no SwiftBar or Übersicht:
+
+```bash
+bash scripts/build_app.sh && open dist/AIQuotaBar.app
+```
+
+It shells out to the same CLI, so the honesty rules hold in one place.
 
 Or from PyPI: `uv tool install aiquota` / `pipx install aiquota` /
 `pip install aiquota`.

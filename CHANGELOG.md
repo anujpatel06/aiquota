@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.0 — 2026-09-09
+
+The four gaps found by reading CodexBar's source, closed.
+
+### Native menu bar app
+`AIQuotaBar.app` — SwiftUI `MenuBarExtra`, 252KB, no SwiftBar or Ubersicht
+required. Builds with `bash scripts/build_app.sh`; no Xcode needed, just the
+Swift toolchain.
+
+It shells out to `aiquota status --json` rather than reimplementing anything,
+so provider logic, credential handling and the honesty rules stay in one
+place instead of drifting across two codebases. It also asks
+`aiquota refresh --json` for its poll interval, so the adaptive policy is not
+duplicated either.
+
+Ad-hoc signed. Developer ID signing and notarization need a paid Apple
+account; until then Gatekeeper asks on first open, and the README says so
+rather than pretending otherwise.
+
+### `aiquota serve`
+A read-only HTTP API on localhost so other tools consume aiquota instead of
+cloning it: `/usage`, `/usage/<name>`, `/providers`, `/healthz`.
+
+Binds 127.0.0.1 only and refuses a public bind outright. No endpoint can
+change configuration, and a test asserts no endpoint leaks a credential.
+Honours the same TTL cache, so a chatty client cannot make aiquota hammer a
+provider.
+
+### Cost tracking
+A percentage answers "how much of my allowance is gone". It cannot answer
+"what will I be billed". Providers that report real money now populate a
+`Cost` — balance, limit, currency, period — shown in the CLI, the widget and
+the native app.
+
+`limit` stays optional: prepaid balances have no cap, and a percentage
+against an invented ceiling would be a lie.
+
+### VISION.md and CONTRIBUTING.md
+What gets merged by default, what needs discussion, and the rules that don't
+bend — with the note that those rules are enforced by tests, not honour.
+
+162 tests.
+
 ## 0.4.1 — 2026-09-09
 
 Performance, measured before and after rather than guessed at.
