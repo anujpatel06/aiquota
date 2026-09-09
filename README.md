@@ -41,9 +41,12 @@ ChatGPT  ChatGPT (team)  [live]
 ## Install
 
 ```bash
-uv tool install aiquota      # or: pipx install aiquota
+brew install anujpatel06/aiquota/aiquota
 aiquota install-widget       # macOS: adds the menu bar + desktop widgets
 ```
+
+Or from PyPI: `uv tool install aiquota` / `pipx install aiquota` /
+`pip install aiquota`.
 
 Then click **＋ Add an AI account** in the widget and sign in.
 
