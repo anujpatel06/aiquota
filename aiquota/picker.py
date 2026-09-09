@@ -18,11 +18,13 @@ try:
     from aiquota.catalog import sorted_catalog, by_key
     from aiquota.core import (load_config, save_config, load_adapters,
                               registry, linked_services)
+    from aiquota.login_policy import may_browser_login, policy_for
 except ImportError:
     # Installed as a console script — the package is on sys.path already.
     from aiquota.catalog import sorted_catalog, by_key
     from aiquota.core import (load_config, save_config, load_adapters,
                               registry, linked_services)
+    from aiquota.login_policy import may_browser_login, policy_for
 
 TITLE = "aiquota"
 
@@ -252,18 +254,108 @@ def _handle_choice(cfg, reg, e):
         notify(f"Linked {e['name']}")
         return 0
 
-    # --- browser sign-in (OAuth) if the platform supports it -----------
+    # --- sign in with your own account, in a real browser window -------
+    # Preferred path where the provider permits it. Gated by login_policy:
+    # some providers (Anthropic) restrict OAuth to their own apps and have
+    # banned accounts over third-party sign-in, so this is a per-platform
+    # policy decision, not a UI preference.
     ad = reg.get(e["adapter"])
+    if (ad is not None and getattr(ad, "browser_login", None)
+            and may_browser_login(key)):
+        return finish_browser_login(cfg, key, e, ad)
+
+    # --- browser sign-in (OAuth) if the platform supports it -----------
     if ad is not None and getattr(ad, "oauth_login", None):
         return finish_oauth(cfg, key, e, ad)
 
     # --- API-key platforms: one paste, then live forever ---------------
     if ad is not None and getattr(ad, "api_key_label", None):
+        # If we'd have preferred a browser sign-in but policy forbids it,
+        # say so plainly instead of silently demanding a key.
+        if getattr(ad, "browser_login", None) and not may_browser_login(key):
+            _policy, why, source = policy_for(key)
+            if not confirm(
+                    f"{e['name']} doesn't allow other apps to sign in for you."
+                    f"\n\n{why}\n\n"
+                    "You can still track it — using a credential you already "
+                    "have.",
+                    ok_label="Continue"):
+                return 0
         return finish_api_key(cfg, key, e, ad)
+
+    # --- own-credential platforms: point us at what you already have ---
+    if ad is not None and getattr(ad, "browser_login", None):
+        _policy, why, source = policy_for(key)
+        confirm(f"{e['name']} can't be linked by signing in here.\n\n{why}\n\n"
+                f"Run  aiquota link {key}  to use an existing credential.",
+                ok_label="OK")
+        return 0
 
     # --- manual platforms: the user supplies the numbers ---------------
     entry = {"adapter": "manual", "enabled": True, "service": e["name"]}
     return finish_manual(cfg, key, entry, e)
+
+
+def finish_browser_login(cfg, key, e, ad):
+    """Sign in on the platform's own site, in a window aiquota opens.
+
+    The user chooses the account — any email they like. We never see the
+    password; we read the resulting session out of the window afterwards.
+    """
+    from .browser_login import login_and_capture, find_browser, LoginError
+
+    name = e["name"]
+    if not find_browser():
+        confirm(f"Signing in to {name} needs Google Chrome (or Brave, Edge, "
+                "or Chromium) installed.\n\nInstall one, then try again.",
+                ok_label="OK")
+        return 0
+
+    spec = ad.browser_login  # {"url", "domains", "want", "label"?}
+    label = spec.get("label") or f"Sign in to {name}"
+    if not confirm(
+            f"{label}\n\n"
+            f"A window will open on {name}'s own website.\n"
+            "Sign in with whichever account you want to track — aiquota "
+            "never sees your password.\n\n"
+            "The window closes by itself once you're signed in.",
+            ok_label="Open sign-in"):
+        return 0
+
+    try:
+        jar = login_and_capture(spec["url"], spec["domains"], spec["want"],
+                                timeout=spec.get("timeout", 300))
+    except LoginError as exc:
+        confirm(f"Sign-in failed.\n\n{exc}\n\n{name} was not added.",
+                ok_label="OK")
+        return 1
+
+    if not jar:
+        # Closed the window, or never finished signing in. Add nothing.
+        notify(f"{name} was not added — sign-in wasn't completed")
+        return 0
+
+    entry = {"adapter": ad.name, "enabled": True, "service": name,
+             "auth": "browser", "session": jar}
+
+    # Verify before saving: a stored session that doesn't actually work is
+    # worse than no entry at all, because the widget would show a broken card.
+    try:
+        probe = ad.probe(dict(entry, _key=key))
+        if getattr(probe, "tier", None) == "error":
+            confirm(f"Signed in, but {name} didn't return usage data.\n\n"
+                    f"{getattr(probe, 'note', '') or ''}\n\n"
+                    "Nothing was saved.", ok_label="OK")
+            return 1
+    except Exception as exc:
+        confirm(f"Signed in, but reading {name} usage failed.\n\n{exc}\n\n"
+                "Nothing was saved.", ok_label="OK")
+        return 1
+
+    cfg.setdefault("services", {})[key] = entry
+    save_config(cfg)
+    notify(f"Linked {name}")
+    return 0
 
 
 def finish_oauth(cfg, key, e, ad):

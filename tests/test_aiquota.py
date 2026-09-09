@@ -668,6 +668,49 @@ class TestIsLinked(Base):
         self.assertNotIn("chatgpt", linked_services())
 
 
+class TestLoginPolicy(Base):
+    """Authentication method is a per-provider POLICY, not a UI preference.
+
+    Anthropic restricts OAuth to its own applications and banned third-party
+    tools' users in April 2026. A browser sign-in for Claude would put real
+    accounts at risk, so it must stay structurally impossible rather than
+    depending on someone remembering.
+    """
+
+    def test_claude_must_not_offer_browser_login(self):
+        from aiquota.login_policy import may_browser_login, policy_for
+        self.assertFalse(may_browser_login("claude"))
+        policy, why, source = policy_for("claude")
+        self.assertEqual(policy, "own-credential")
+        self.assertTrue(why, "a refusal must explain itself")
+        self.assertIn("claude.com", source)
+
+    def test_openrouter_may_browser_login(self):
+        """OpenRouter documents a PKCE flow for third-party apps."""
+        from aiquota.login_policy import may_browser_login
+        self.assertTrue(may_browser_login("openrouter"))
+
+    def test_unknown_platforms_default_to_manual(self):
+        from aiquota.login_policy import policy_for, may_browser_login
+        self.assertEqual(policy_for("some-new-service")[0], "manual")
+        self.assertFalse(may_browser_login("some-new-service"))
+
+    def test_every_policy_entry_cites_a_source(self):
+        from aiquota.login_policy import LOGIN_POLICY
+        for key, (policy, why, source) in LOGIN_POLICY.items():
+            self.assertIn(policy, ("browser", "own-credential", "manual"), key)
+            self.assertTrue(why.strip(), f"{key} has no rationale")
+            self.assertTrue(source.startswith("http"), f"{key} has no source")
+
+    def test_browser_login_captures_nothing_by_default(self):
+        """The module must not read credentials merely on import."""
+        from aiquota import browser_login
+        self.assertTrue(hasattr(browser_login, "login_and_capture"))
+        # No global state that could hold a session.
+        for attr in ("SESSION", "COOKIES", "TOKEN"):
+            self.assertFalse(hasattr(browser_login, attr))
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html
