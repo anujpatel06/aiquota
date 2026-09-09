@@ -4,31 +4,33 @@
 
 Checking whether you're about to hit a limit means opening Claude's settings,
 then ChatGPT's, then whatever else you pay for. `aiquota` puts every quota in
-one command.
+one widget, one menu bar item, and one command.
+
+<p align="center">
+  <img src="docs/img/widget.png" width="440" alt="aiquota desktop widget showing Claude and ChatGPT usage">
+</p>
 
 ```
 $ aiquota
 
-Claude  Max  [live]
-  5-hour session     ████░░░░░░░░░░░░░░░░░░░░  16.0%  resets Wed 01:40
-  Weekly (all)       ░░░░░░░░░░░░░░░░░░░░░░░░   2.0%  resets Mon 00:30
+Claude  [live]
+  5-hour session     █████████░░░░░░░░░░░░░░░  37.0%  resets Wed 20:30
+  Weekly (all)       █████░░░░░░░░░░░░░░░░░░░  22.0%  resets Mon 00:30
   binding: five_hour · overage: rejected
 
 ChatGPT  ChatGPT (team)  [live]
-  5-hour             █████████████░░░░░░░░░░░  53.0%  resets Tue 22:45
-  7-day              ████░░░░░░░░░░░░░░░░░░░░  18.0%  resets Tue 11:39
-
-Higgsfield  Creator  [manual]
-  Credits used       ███████████████░░░░░░░░░  63.0%
-  credits: 555 · renews in 22d
+  5-hour             ███████████████░░░░░░░░░  64.0%  resets Wed 18:34
+  7-day              ███████░░░░░░░░░░░░░░░░░  28.0%  resets Tue 11:39
 ```
 
-- **No dependencies.** Pure Python stdlib.
-- **Honest about confidence.** Every card is tagged `live`, `manual`, or
-  `error`, so you always know whether you're reading a real number or your own
-  note.
-- **Extensible.** Add a service with one config command, or a new provider by
-  dropping a Python file in a directory.
+- **Sign in, don't paste keys.** Pick a platform and its own login page opens.
+  You choose the account; aiquota never sees a password.
+- **No dependencies.** Pure Python stdlib, so `pip install` can't break.
+- **Never invents a number.** Every card is tagged `live`, `manual`, or
+  `error`. If a provider exposes no counter, it says so instead of showing a
+  plausible percentage.
+- **Respects provider terms.** Where a provider forbids third-party sign-in,
+  aiquota won't offer it — and tells you why, with a link to the policy.
 
 ---
 
@@ -198,11 +200,11 @@ Most AI subscriptions expose nothing. Track them anyway — no code required:
 
 ```bash
 aiquota add higgsfield --adapter manual --plan "Creator" \
-    --set credits=555 --set credits_total=1500 --set renews_on=2026-10-01
+    --set credits=420 --set credits_total=1500 --set renews_on=2026-10-01
 
 # or as a used/limit pair with your own unit
-aiquota add midjourney --adapter manual \
-    --set used=140 --set limit=900 --set unit_label="Fast GPU min"
+aiquota add notebooklm --adapter manual \
+    --set used=140 --set limit=900 --set unit_label="Notebooks"
 ```
 
 These render as `manual`, so you're never fooled into thinking a hand-typed
@@ -210,31 +212,62 @@ number was fetched live.
 
 ## Supported platforms
 
-`aiquota link` lists all of these. Two fetch real usage; the rest are tracked
-with numbers you enter, because their vendors publish no consumer usage API.
+How you connect each one depends on what the provider allows.
 
-| Platform | Status | What you get |
+### Sign in with your account
+
+Click the platform, its own login page opens, you pick the account.
+No API key, no password shown to aiquota.
+
+<p align="center">
+  <img src="docs/img/picker.png" width="420" alt="Platform picker listing 16 AI services with logos and status">
+</p>
+
+| Platform | What you get |
+|---|---|
+| **Cursor** | Request quota for the billing period (sign in) |
+| **Grok** | Subscription tier (sign in) |
+| **Midjourney** | Fast GPU minutes (sign in) |
+| **OpenRouter** | Credit balance and spend (official API) |
+| **Perplexity** | Pro search quota (sign in) |
+| **Runway** | Credit balance (sign in) |
+| **Suno** | Song credits and renewal date (sign in) |
+
+### Uses a credential you already have
+
+These providers restrict third-party sign-in, so aiquota reads a
+credential you created yourself — and asks first.
+
+| Platform | Why not sign-in | Source |
 |---|---|---|
-| **Claude** (Anthropic) | ● live | 5-hour + weekly windows, resets, overage state |
-| **ChatGPT / Codex** (OpenAI) | ● live | Codex/Work windows + credits |
-| Cursor, GitHub Copilot, ElevenLabs, OpenRouter | ◐ manual for now | An endpoint likely exists — adapters welcome |
-| Gemini, Grok, Perplexity, Midjourney, Higgsfield, Runway, Suno, v0, Lovable, Replit | ○ manual | No usage API; you enter the numbers |
-| Anything else | ○ manual | "Something else…" in the picker |
+| **ChatGPT / Codex** | Codex CLI's login is issued to Codex. | [developers.openai.com](https://developers.openai.com/codex/auth) |
+| **Claude** | Anthropic restricts OAuth to Claude Code and its own applications. | [code.claude.com](https://code.claude.com/docs/en/legal-and-compliance) |
+| **ElevenLabs** | No third-party OAuth; a user-created API key is the supported route. | [elevenlabs.io](https://elevenlabs.io/docs/api-reference/authentication) |
+| **GitHub Copilot** | Reuses your existing `gh` CLI login, which you performed yourself. | [docs.github.com](https://docs.github.com/en/copilot) |
 
-Adding a platform to the catalog does **not** make it fetchable. If you know a
-real endpoint for a `manual` entry, that's the most valuable PR you can send —
-see [CONTRIBUTING.md](CONTRIBUTING.md).
+### Manual entry
 
+No reachable usage endpoint — probed and confirmed, not assumed.
+You enter the numbers and they're labelled `manual`.
+
+**Gemini**, **Higgsfield**, **Lovable**, **Replit**, **v0**.
+
+Anything not listed: choose "Something else…" in the picker.
+
+If you know a real endpoint for a manual entry, that's the most
+valuable PR you can send — see [CONTRIBUTING.md](CONTRIBUTING.md).
 ### Important caveats
 
 Read these before trusting a number.
 
-- **No vendor offers a documented consumer-quota API.** Both live adapters use
-  undocumented endpoints that OpenAI's and Anthropic's own clients call. They
-  can break without notice. This project has no affiliation with either.
-- **Claude's reading costs a sliver of quota.** The unified headers only appear
-  on an actual inference response, so the adapter makes a 1-token Haiku call.
-  Results are cached for 5 minutes by default — raise `--ttl` if you poll often.
+- **Most of these endpoints are undocumented.** They are the ones each
+  vendor's own client calls, and they can change without notice. aiquota has no
+  affiliation with any provider listed.
+- **Claude prefers a free read.** The adapter calls the read-only
+  `/api/oauth/usage` endpoint first. If your token lacks the `user:profile`
+  scope (tokens from `claude setup-token` do), it falls back to reading rate
+  headers from a 1-token Haiku call and says so in `read_via`. Results are
+  cached for 5 minutes — raise `--ttl` if you poll often.
 - **ChatGPT covers the Codex/Work meter, not general chat.** Your normal
   conversation quota has no reachable endpoint. Nothing here can show it.
 - **ChatGPT Plus ≠ OpenAI API.** Separate products, separate billing. The
