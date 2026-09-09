@@ -502,6 +502,19 @@ def cmd_doctor(a) -> int:
     print(f"  adapters    {user_adapter_dir()}")
     print(f"  registered  {', '.join(sorted(registry())) or 'none'}")
     print(f"  tracked     {len(cfg.get('services', {}))}\n")
+
+    # Entries added before an adapter existed stay stuck on manual and quietly
+    # show "no values entered yet" while a live reader goes unused.
+    from .core import stale_entries
+    stale = stale_entries(cfg)
+    if stale:
+        print(C.bold("  upgradeable"))
+        for key, adapter in stale.items():
+            print(f"    {key:<12} stored as manual, but '{adapter}' can read "
+                  f"it live\n{'':<17}fix: aiquota remove {key} -y && "
+                  f"aiquota link {key}")
+        print()
+
     d = collect(force=True, ttl=0)
     for s in d["services"]:
         label, colour = TIER_LABEL.get(s["tier"], ("?", C.dim))

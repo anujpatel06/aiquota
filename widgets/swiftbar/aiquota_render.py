@@ -8,6 +8,15 @@ import sys
 TIER = {"live": "●", "manual": "○", "error": "⚠", "unconfigured": "○"}
 
 
+def _cli():
+    """Absolute path to the aiquota binary — SwiftBar's bash= needs one."""
+    for p in (os.path.expanduser("~/.local/bin/aiquota"),
+              "/opt/homebrew/bin/aiquota", "/usr/local/bin/aiquota"):
+        if os.path.exists(p):
+            return p
+    return "aiquota"
+
+
 def main():
     try:
         raw = subprocess.run(
@@ -71,7 +80,7 @@ def main():
             p = float(w["used_pct"])
             filled = int(round(p / 10))
             bar = "█" * filled + "░" * (10 - filled)
-            colour = "red" if p >= 85 else ("orange" if p >= 60 else "green")
+            colour = "red" if p >= 85 else "white"
             reset = ""
             if w.get("resets_at"):
                 reset = "  ↻ %s" % w["resets_at"]
@@ -85,6 +94,12 @@ def main():
             print("--renews in %sd | font=Menlo" % ex["renews_in_days"])
         if s.get("error"):
             print("--%s | color=red font=Menlo" % s["error"])
+
+        # Removal lives in each service's own submenu, where it can't be hit
+        # by accident. -y is safe here: the click IS the confirmation.
+        print("--Remove %s… | color=#FF453A bash=%s param1=remove "
+              "param2=%s param3=-y terminal=false refresh=true"
+              % (s.get("service", s["name"]), _cli(), s["name"]))
 
     print("---")
     if hidden:

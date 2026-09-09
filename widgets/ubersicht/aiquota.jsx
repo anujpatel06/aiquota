@@ -150,6 +150,24 @@ export const className = `
   @media (prefers-color-scheme: light) {
     .sbiglab { color: rgba(0, 0, 0, 0.38); }
   }
+
+  /* Remove control: hidden until the card is hovered, so the widget stays
+     calm, but discoverable without opening a terminal. */
+  .del {
+    pointer-events: auto; cursor: pointer;
+    width: 18px; height: 18px; flex: none;
+    margin-left: 6px; border: none; padding: 0;
+    border-radius: 50%; opacity: 0;
+    font-size: 12px; line-height: 1;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+    transition: opacity 0.12s ease, background 0.12s ease;
+  }
+  .svc:hover .del { opacity: 1; }
+  .del:hover { background: #FF453A; color: #fff; }
+  @media (prefers-color-scheme: light) {
+    .del { background: rgba(0, 0, 0, 0.10); color: rgba(0, 0, 0, 0.65); }
+  }
   @media (prefers-color-scheme: light) {
     .splan { color: rgba(0, 0, 0, 0.42); }
   }
@@ -247,15 +265,19 @@ export const className = `
 `;
 
 // Apple system colors (dark-mode variants).
-const SYS_GREEN = "#30D158";
-const SYS_ORANGE = "#FF9F0A";
 const SYS_RED = "#FF453A";
 const SYS_GRAY = "#8E8E93";
+// Meters and the live dot are white; the widget's own material supplies the
+// contrast, and light mode flips this to near-black.
+const SYS_WHITE = "rgba(255, 255, 255, 0.92)";
 
-const tone = (p) => (p >= 85 ? SYS_RED : p >= 60 ? SYS_ORANGE : SYS_GREEN);
+// Meter colour. White by default — a wall of green reads as decoration and
+// stops meaning anything. Colour is reserved for the one case worth
+// interrupting you: a window that is nearly spent.
+const tone = (p) => (p >= 85 ? SYS_RED : SYS_WHITE);
 
 const dotColor = (t) =>
-  t === "live" ? SYS_GREEN : t === "error" ? SYS_RED : SYS_GRAY;
+  t === "error" ? SYS_RED : t === "live" ? SYS_WHITE : SYS_GRAY;
 
 // Run a shell command. Übersicht injects `run` into the render scope, but a
 // bare `typeof run` throws a ReferenceError in some scopes and kills the click
@@ -386,6 +408,21 @@ const openPicker = () =>
       "-e 'tell application \"Terminal\" to activate'"
   );
 
+// Remove a service. Confirms first — this is a one-click destructive action
+// on a control that only appears on hover, so it must be hard to do by
+// accident. Finder owns the dialog because osascript run from Übersicht has
+// no window-server session of its own.
+const removeService = (name) => {
+  const q = String(name).replace(/'/g, "'\\''");
+  shell(
+    "osascript -e 'tell application \"Finder\" to display dialog " +
+      `"Remove ${q} from aiquota?" buttons {"Cancel","Remove"} ` +
+      "default button \"Cancel\" with icon caution' " +
+      `-e 'do shell script "PATH=$HOME/.local/bin:$PATH aiquota remove ${q} -y"' ` +
+      "|| true"
+  );
+};
+
 export const render = ({ output }) => {
   let data = {};
   try {
@@ -464,6 +501,13 @@ export const render = ({ output }) => {
                   <span className="sbiglab">{peak.label}</span>
                 </span>
               ) : null}
+              <button
+                className="del"
+                title={`Remove ${s.service}`}
+                onClick={() => removeService(s.name)}
+              >
+                ×
+              </button>
             </div>
 
             {wins.map((w, j) => {

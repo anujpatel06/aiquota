@@ -888,6 +888,35 @@ class TestSessionAdapters(Base):
         self.assertEqual(r.tier, "error")
 
 
+class TestStaleEntries(Base):
+    """A platform added before its adapter shipped must not stay manual.
+
+    Cursor was added when the catalog still said manual; it then kept showing
+    "no values entered yet" even after a live adapter existed.
+    """
+
+    def test_detects_manual_entry_with_a_live_adapter(self):
+        from aiquota.core import stale_entries
+        cfg = {"services": {"cursor": {"adapter": "manual", "note": "x"}}}
+        self.assertEqual(stale_entries(cfg), {"cursor": "cursor"})
+
+    def test_genuinely_manual_platforms_are_not_flagged(self):
+        from aiquota.core import stale_entries
+        cfg = {"services": {"higgsfield": {"adapter": "manual"}}}
+        self.assertEqual(stale_entries(cfg), {})
+
+    def test_live_entries_are_not_flagged(self):
+        from aiquota.core import stale_entries
+        cfg = {"services": {"claude": {"adapter": "claude", "token": "x"}}}
+        self.assertEqual(stale_entries(cfg), {})
+
+    def test_session_counts_as_linked(self):
+        from aiquota.core import is_linked
+        self.assertTrue(is_linked({"adapter": "cursor",
+                                   "session": {"tok": "v"}}))
+        self.assertFalse(is_linked({"adapter": "cursor", "session": {}}))
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

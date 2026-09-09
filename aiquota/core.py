@@ -211,7 +211,7 @@ def is_linked(conf: Dict[str, Any]) -> bool:
     """
     if not isinstance(conf, dict):
         return False
-    for k in ("api_key", "token", "token_files", "auth_files"):
+    for k in ("api_key", "token", "token_files", "auth_files", "session"):
         if conf.get(k):
             return True
     if conf.get("autodiscover"):
@@ -221,6 +221,27 @@ def is_linked(conf: Dict[str, Any]) -> bool:
                    for k in ("credits", "credits_total", "used",
                              "limit", "renews_on"))
     return False
+
+
+def stale_entries(cfg: Dict[str, Any]) -> Dict[str, str]:
+    """Services stored as 'manual' that a real adapter now supports.
+
+    A platform added before its adapter existed keeps the manual placeholder
+    forever — silently showing "no values entered yet" while a live reader
+    sits unused. Report them so the picker can offer to upgrade.
+    """
+    out = {}
+    try:
+        from .catalog import by_key
+    except Exception:
+        return out
+    for key, entry in (cfg.get("services") or {}).items():
+        if not isinstance(entry, dict) or entry.get("adapter") != "manual":
+            continue
+        cat = by_key(key)
+        if cat and cat.get("adapter") and cat["adapter"] != "manual":
+            out[key] = cat["adapter"]
+    return out
 
 
 def linked_services(cfg: Optional[dict] = None) -> set:
