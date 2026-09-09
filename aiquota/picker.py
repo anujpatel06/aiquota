@@ -323,12 +323,25 @@ def finish_browser_login(cfg, key, e, ad):
                 ok_label="OK")
         return 0
 
-    spec = ad.browser_login  # {"url", "domains", "want", "label"?}
+    spec = ad.browser_login  # {"url", "domains", "want", "read"?, "label"?}
     notify(f"Opening {name} sign-in…")
 
+    read_eps = spec.get("read") or []
     try:
-        jar = login_and_capture(spec["url"], spec["domains"], spec["want"],
-                                timeout=spec.get("timeout", 300))
+        if read_eps:
+            # Provider can't be read by a plain HTTP client (Cloudflare TLS
+            # fingerprinting, or a host that refuses Python's TLS), so take
+            # the readings inside the signed-in page itself.
+            from .browser_login import login_and_read
+            got = login_and_read(spec["url"], spec["domains"], spec["want"],
+                                 read_eps, timeout=spec.get("timeout", 300))
+            jar = got.get("session") or {}
+            readings = got.get("data") or {}
+        else:
+            jar = login_and_capture(spec["url"], spec["domains"],
+                                    spec["want"],
+                                    timeout=spec.get("timeout", 300))
+            readings = {}
     except LoginError as exc:
         confirm(f"Sign-in failed.\n\n{exc}\n\n{name} was not added.",
                 ok_label="OK")
@@ -343,6 +356,8 @@ def finish_browser_login(cfg, key, e, ad):
 
     entry = {"adapter": ad.name, "enabled": True, "service": name,
              "auth": "browser", "session": jar}
+    if readings:
+        entry["readings"] = readings
 
     # Verify before saving: a stored session that doesn't actually work is
     # worse than no entry at all, because the widget would show a broken card.

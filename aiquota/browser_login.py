@@ -215,6 +215,43 @@ class LoginWindow:
                 out[c["name"]] = c["value"]
         return out
 
+    def fetch_json(self, url: str, timeout: float = 20.0):
+        """GET `url` from inside the page and return (status, parsed-json).
+
+        Some providers cannot be read by a stdlib HTTP client at all:
+        Cloudflare fingerprints the TLS handshake (Perplexity answers a
+        challenge page), and Midjourney's host rejects Python's TLS outright.
+        A fetch() running in the page uses Chrome's own TLS stack, headers
+        and session, so it reaches the app where urllib cannot.
+
+        Returns (0, None) if the page could not run the request.
+        """
+        if not self.ws:
+            return 0, None
+        expr = (
+            "(async () => { try {"
+            f"  const r = await fetch({json.dumps(url)}, "
+            "    {credentials:'include', headers:{'Accept':'application/json'}});"
+            "  const t = await r.text();"
+            "  return JSON.stringify({s:r.status, b:t.slice(0, 200000)});"
+            "} catch (e) { return JSON.stringify({s:0, b:String(e)}); } })()"
+        )
+        try:
+            res = self.ws.call("Runtime.evaluate", self._next_id(),
+                               expression=expr, awaitPromise=True,
+                               returnByValue=True)
+        except LoginError:
+            return 0, None
+        raw = res.get("result", {}).get("value")
+        if not raw:
+            return 0, None
+        try:
+            outer = json.loads(raw)
+            body = outer.get("b") or ""
+            return int(outer.get("s") or 0), json.loads(body)
+        except (ValueError, TypeError):
+            return int(outer.get("s") or 0) if isinstance(outer, dict) else 0, None
+
     def alive(self) -> bool:
         return self.proc.poll() is None
 
@@ -230,6 +267,66 @@ class LoginWindow:
             except Exception:
                 pass
         shutil.rmtree(self.profile, ignore_errors=True)
+
+
+def login_and_read(url: str, domains: List[str], want: List[str],
+                   endpoints: List[str], timeout: int = 300,
+                   settle: float = 1.5) -> Dict[str, Any]:
+    """Sign in, then read `endpoints` from inside that same page.
+
+    For providers a stdlib HTTP client cannot reach at all — Cloudflare TLS
+    fingerprinting, or a host that refuses Python's TLS. Cookies are still
+    captured so a later refresh can try them directly, but the readings taken
+    here are what the widget shows first.
+
+    Returns {"session": {...}, "data": {endpoint: json}} or {} if the user
+    never finished signing in.
+    """
+    win = LoginWindow(url)
+    try:
+        win.attach()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if not win.alive():
+                return {}
+            jar = win.cookies_for(domains)
+            if all(k in jar for k in want):
+                time.sleep(settle)
+                if win.alive():
+                    later = win.cookies_for(domains)
+                    if all(k in later for k in want):
+                        jar = later
+                data = {}
+                for ep in endpoints:
+                    status, body = win.fetch_json(ep)
+                    if status == 200 and body is not None:
+                        data[ep] = body
+                return {"session": {k: jar[k] for k in want}, "data": data}
+            time.sleep(1.0)
+        return {}
+    finally:
+        win.close()
+
+
+def refresh_via_browser(url: str, endpoints: List[str],
+                        timeout: int = 60) -> Dict[str, Any]:
+    """Re-read `endpoints` in a headless-ish window using the stored profile.
+
+    Used on refresh for providers that cannot be read any other way. Opens
+    the page, waits briefly for the session to restore, and reads.
+    """
+    win = LoginWindow(url, width=420, height=420)
+    try:
+        win.attach()
+        time.sleep(3.0)
+        out = {}
+        for ep in endpoints:
+            status, body = win.fetch_json(ep)
+            if status == 200 and body is not None:
+                out[ep] = body
+        return out
+    finally:
+        win.close()
 
 
 def login_and_capture(url: str, domains: List[str], want: List[str],

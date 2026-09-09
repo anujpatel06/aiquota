@@ -1133,6 +1133,70 @@ class TestRemoveUI(Base):
                          "AppleScript must not be built in the widget")
 
 
+class TestBrowserReadAdapters(Base):
+    """Providers only a real browser can reach.
+
+    Perplexity sits behind Cloudflare TLS fingerprinting and Midjourney's
+    host refuses Python's TLS, so both are read with an in-page fetch()
+    during sign-in rather than by the adapter itself. Verified live: from
+    inside Chrome, Perplexity answered 200 with JSON and Midjourney 401 —
+    both real app responses, not challenge pages.
+    """
+
+    def _ad(self, name):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        return registry()[name]
+
+    def test_both_offer_browser_login_with_read_endpoints(self):
+        from aiquota.login_policy import may_browser_login
+        for n in ("perplexity", "midjourney"):
+            ad = self._ad(n)
+            spec = ad.browser_login
+            self.assertTrue(may_browser_login(n), n)
+            self.assertTrue(spec["read"], f"{n}: nothing to read in-page")
+            self.assertTrue(all(e.startswith("https://") for e in spec["read"]))
+
+    def test_unconfigured_before_sign_in(self):
+        for n in ("perplexity", "midjourney"):
+            self.assertEqual(self._ad(n).probe({"_key": n}).tier,
+                             "unconfigured")
+
+    def test_perplexity_parses_counters(self):
+        ad = self._ad("perplexity")
+        ep = ad.endpoints[0]
+        conf = {"_key": "perplexity", "session": {"x": "y"},
+                "readings": {ep: {"gpt4_limit": 600, "gpt4_used": 150,
+                                  "subscription_status": "pro"}}}
+        r = ad.probe(conf)
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows[0].used_pct, 25.0)
+        self.assertEqual(r.plan, "Pro")
+
+    def test_midjourney_parses_fast_minutes(self):
+        ad = self._ad("midjourney")
+        ep = ad.endpoints[0]
+        conf = {"_key": "midjourney", "session": {"x": "y"},
+                "readings": {ep: {"fast_time_used": 3, "fast_time_allowance": 15,
+                                  "plan": "Standard"}}}
+        r = ad.probe(conf)
+        self.assertEqual(r.tier, "live")
+        self.assertEqual(r.windows[0].used_pct, 20.0)
+
+    def test_missing_counters_never_fabricate_a_number(self):
+        ad = self._ad("perplexity")
+        conf = {"_key": "perplexity", "session": {"x": "y"},
+                "readings": {ad.endpoints[0]: {"subscription_status": "free"}}}
+        r = ad.probe(conf)
+        self.assertEqual(r.windows, [])
+        self.assertIn("no usage counters", r.note)
+
+    def test_signed_in_but_no_readings_is_an_error(self):
+        ad = self._ad("perplexity")
+        r = ad.probe({"_key": "perplexity", "session": {"x": "y"}})
+        self.assertEqual(r.tier, "error")
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html

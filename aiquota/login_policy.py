@@ -84,6 +84,18 @@ LOGIN_POLICY = {
         "Credit balance is exposed to the signed-in session only.",
         "https://app.runwayml.com",
     ),
+    "perplexity": (
+        "browser",
+        "Quota is exposed to the signed-in dashboard only; Cloudflare blocks "
+        "plain HTTP clients, so the reading is taken inside the browser.",
+        "https://www.perplexity.ai/settings/account",
+    ),
+    "midjourney": (
+        "browser",
+        "Fast GPU minutes are exposed to the signed-in session only; the host "
+        "refuses non-browser TLS, so the reading is taken in the browser.",
+        "https://www.midjourney.com/account",
+    ),
 }
 
 DEFAULT = ("manual", "No public quota API; values are entered by hand.", "")
