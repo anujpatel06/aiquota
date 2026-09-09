@@ -11,6 +11,7 @@ import os
 import pkgutil
 import sys
 import time
+from concurrent import futures
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Optional
 
@@ -317,12 +318,19 @@ def collect(only: Optional[List[str]] = None, force: bool = False,
 
     The cache matters: some adapters cost real quota to probe, so a widget on
     a short refresh timer must not hammer them.
+
+    Probes run in parallel. They are almost entirely network wait, so doing
+    them one at a time made a cold refresh cost the *sum* of every provider's
+    latency — someone with ten accounts linked waited ten round trips. Now it
+    costs roughly the slowest one.
     """
     load_adapters()
     cfg = load_config()
     cache = _read_cache()
     now = time.time()
-    results, used_cache = [], False
+    results: List[Result] = []
+    used_cache = False
+    to_probe = []   # (key, adapter, conf) that actually need a network call
 
     for key, sconf in cfg.get("services", {}).items():
         if only and key not in only:
@@ -354,17 +362,40 @@ def collect(only: Optional[List[str]] = None, force: bool = False,
             except Exception:
                 pass
 
+        probe_conf = dict(sconf)
+        probe_conf["_key"] = key              # adapters may use this as a label
+        to_probe.append((key, ad, probe_conf))
+
+    def _run(item):
+        key, ad, probe_conf = item
         try:
-            probe_conf = dict(sconf)
-            probe_conf["_key"] = key          # adapters may use this as a label
             r = ad.probe(probe_conf)
         except Exception as e:                      # adapter bug guard
             r = Result(name=key, service=ad.service or key, tier=ERROR,
                        error=f"adapter raised {type(e).__name__}: {e}")
         r.name = key
-        results.append(r)
-        if r.tier == LIVE:
-            cache[key] = {"at": now, "result": r.to_dict()}
+        return r
+
+    if len(to_probe) == 1:
+        # Threads cost more than they save for a single probe, and keeping the
+        # call on this thread makes tracebacks readable while debugging.
+        results.append(_run(to_probe[0]))
+    elif to_probe:
+        # Bounded: a user with 25 accounts should not open 25 sockets at once.
+        workers = min(len(to_probe), 8)
+        with futures.ThreadPoolExecutor(max_workers=workers,
+                                        thread_name_prefix="aiquota") as pool:
+            for r in pool.map(_run, to_probe):
+                results.append(r)
+
+    for r in results:
+        if r.tier == LIVE and r.name in {k for k, _a, _c in to_probe}:
+            cache[r.name] = {"at": now, "result": r.to_dict()}
+
+    # Stable output regardless of which probe finished first, so the widget
+    # doesn't reshuffle its rows between refreshes.
+    order = list(cfg.get("services", {}).keys())
+    results.sort(key=lambda r: order.index(r.name) if r.name in order else 999)
 
     _write_cache(cache)
     return {

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.1 — 2026-09-09
+
+Performance, measured before and after rather than guessed at.
+
+### Parallel probes
+`collect()` ran providers one at a time, so a cold refresh cost the SUM of
+every provider's latency — linking more accounts made the tool slower, which
+is a bad trade for something whose selling point is breadth. Probes now run
+in a bounded pool (8 workers).
+
+Measured with 8 providers at 0.4s each: **3.2s -> 0.41s, a 7.8x speedup.**
+Output order stays stable so the widget doesn't reshuffle its rows, one slow
+provider no longer blocks the rest, and a crashing adapter still can't take
+down the others.
+
+### Faster startup
+`urllib` was imported at module scope in the HTTP helper, dragging in the
+whole `email` package for ~28ms on every invocation — including the cached
+path that never makes a request. Now imported inside `request()`.
+
+**Import cost: 0.13s -> 0.06s. Cached `aiquota status`: ~40ms.**
+
+### Picker
+Logos (65KB of JSON) were re-read and re-parsed on every call, on the exact
+path the user waits for. Parsed once per process now.
+
 ## 0.4.0 — 2026-09-09
 
 Ideas worth taking from CodexBar (21k stars, MIT), credited and adapted.

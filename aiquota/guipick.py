@@ -23,12 +23,24 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "assets", "logos.json")
 
 
+_LOGO_CACHE: Optional[Dict[str, str]] = None
+
+
 def _logos() -> Dict[str, str]:
-    try:
-        with open(ASSETS) as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    """Base64 logos, parsed once per process.
+
+    65KB of JSON. The picker asks for these while Chrome is still starting, so
+    re-reading and re-parsing the file on every call was pure latency on the
+    path the user actually waits for.
+    """
+    global _LOGO_CACHE
+    if _LOGO_CACHE is None:
+        try:
+            with open(ASSETS) as f:
+                _LOGO_CACHE = json.load(f)
+        except Exception:
+            _LOGO_CACHE = {}
+    return _LOGO_CACHE or {}
 
 
 def _free_port() -> int:

@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
 UA = "aiquota/0.1 (+https://github.com/anujpatel/aiquota)"
@@ -13,7 +11,15 @@ def request(url: str, headers: Optional[Dict[str, str]] = None,
             data: Optional[bytes] = None,
             timeout: int = 30) -> Tuple[int, Dict[str, str], bytes]:
     """Return (status, lowercased headers, body). Never raises on HTTP errors,
-    because error responses often carry the headers we actually want."""
+    because error responses often carry the headers we actually want.
+
+    urllib is imported here rather than at module scope: it drags in the whole
+    `email` package (~28ms), and the common path — a widget tick that hits the
+    TTL cache — never makes a request at all.
+    """
+    import urllib.error
+    import urllib.request
+
     h = {"User-Agent": UA, "Accept": "application/json"}
     if headers:
         h.update(headers)

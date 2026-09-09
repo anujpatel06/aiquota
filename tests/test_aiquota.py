@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 from contextlib import redirect_stderr, redirect_stdout
@@ -1586,6 +1587,129 @@ class TestConfidence(Base):
         d = {"name": "x", "service": "X", "windows": [],
              "some_field_from_the_future": 1}
         self.assertEqual(Result.from_dict(d).name, "x")
+
+
+class TestParallelCollect(Base):
+    """Probes are network wait; doing them one at a time punished breadth.
+
+    With N providers linked, a sequential collect cost the SUM of every
+    provider's latency. Parallel, it costs roughly the slowest one — which is
+    what makes covering 28 platforms usable rather than a penalty.
+    """
+
+    def _register_slow(self, n, delay):
+        from aiquota.core import LIVE, Adapter, register
+        made = []
+        for i in range(n):
+            class Slow(Adapter):
+                service = f"Slow {i}"
+
+                def probe(self, conf):
+                    time.sleep(delay)
+                    return self.make(conf, tier=LIVE)
+            Slow.name = f"slow{i}"
+            register(Slow)
+            made.append(f"slow{i}")
+        return made
+
+    def test_probes_run_concurrently(self):
+        from aiquota.core import collect, load_config, save_config
+        names = self._register_slow(6, 0.2)
+        cfg = load_config()
+        cfg["services"] = {n: {"adapter": n, "enabled": True} for n in names}
+        save_config(cfg)
+
+        t = time.time()
+        out = collect(force=True)
+        elapsed = time.time() - t
+
+        self.assertEqual(len(out["services"]), 6)
+        # Sequential would be 1.2s. Allow generous headroom for slow CI.
+        self.assertLess(elapsed, 0.8,
+                        f"probes appear serialised ({elapsed:.2f}s for 6x0.2s)")
+
+    def test_order_is_stable_regardless_of_finish_time(self):
+        """The widget must not reshuffle rows between refreshes."""
+        from aiquota.core import LIVE, Adapter, collect, load_config, register, save_config
+        delays = {"aa": 0.25, "bb": 0.05, "cc": 0.15}
+        for key, d in delays.items():
+            class Var(Adapter):
+                service = key
+
+                def probe(self, conf, _d=d):
+                    time.sleep(_d)
+                    return self.make(conf, tier=LIVE)
+            Var.name = key
+            register(Var)
+        cfg = load_config()
+        cfg["services"] = {k: {"adapter": k, "enabled": True} for k in delays}
+        save_config(cfg)
+
+        first = [s["name"] for s in collect(force=True)["services"]]
+        second = [s["name"] for s in collect(force=True)["services"]]
+        self.assertEqual(first, second)
+        self.assertEqual(first, list(delays.keys()))
+
+    def test_one_slow_provider_does_not_block_the_others(self):
+        from aiquota.core import LIVE, Adapter, collect, load_config, register, save_config
+
+        class Fast(Adapter):
+            name, service = "fastone", "Fast"
+
+            def probe(self, conf):
+                return self.make(conf, tier=LIVE)
+
+        class Slow(Adapter):
+            name, service = "slowone", "Slow"
+
+            def probe(self, conf):
+                time.sleep(0.3)
+                return self.make(conf, tier=LIVE)
+
+        register(Fast)
+        register(Slow)
+        cfg = load_config()
+        cfg["services"] = {"slowone": {"adapter": "slowone", "enabled": True},
+                           "fastone": {"adapter": "fastone", "enabled": True}}
+        save_config(cfg)
+        t = time.time()
+        out = collect(force=True)
+        self.assertLess(time.time() - t, 0.55)
+        self.assertEqual(len(out["services"]), 2)
+
+    def test_a_crashing_adapter_cannot_take_down_the_others(self):
+        from aiquota.core import LIVE, Adapter, collect, load_config, register, save_config
+
+        class Boom(Adapter):
+            name, service = "boom", "Boom"
+
+            def probe(self, conf):
+                raise RuntimeError("kaboom")
+
+        class Fine(Adapter):
+            name, service = "fine", "Fine"
+
+            def probe(self, conf):
+                return self.make(conf, tier=LIVE)
+
+        register(Boom)
+        register(Fine)
+        cfg = load_config()
+        cfg["services"] = {"boom": {"adapter": "boom", "enabled": True},
+                           "fine": {"adapter": "fine", "enabled": True}}
+        save_config(cfg)
+        out = collect(force=True)
+        by = {s["name"]: s for s in out["services"]}
+        self.assertEqual(by["boom"]["tier"], "error")
+        self.assertIn("kaboom", by["boom"]["error"])
+        self.assertEqual(by["fine"]["tier"], "live")
+
+    def test_worker_count_is_bounded(self):
+        """25 linked accounts must not open 25 sockets at once."""
+        import pathlib
+        src = (pathlib.Path(__file__).parent.parent /
+               "aiquota" / "core.py").read_text()
+        self.assertIn("min(len(to_probe), 8)", src)
 
 
 class TestHTML(Base):
