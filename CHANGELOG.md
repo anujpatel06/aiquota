@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.2 — 2026-09-10
+
+### Fixed: an exhausted Claude window displayed as 1%
+Anthropic reports utilization as a 0-1 fraction and keeps going past 1.0 once
+a window is spent — 1.02, 1.05, 1.2. The adapter guessed the scale per value
+with `u * 100 if u <= 1.0 else u`, so 1.02 was mistaken for a percentage and
+rendered as **1%**.
+
+That is the worst direction this error could take: the widget claimed a full
+allowance at the exact moment there was none, and kept claiming it until the
+window actually reset.
+
+The scale is now decided once per response, across every window, so one
+exhausted window can no longer flip its own interpretation. Percentages are
+clamped to 100 — "102%" reads as a broken tool — and the unclamped figure is
+kept in `extra.over_limit` for anyone who wants to know a window went past its
+limit rather than merely reached it.
+
+Eight regression tests cover it, including the reported case end to end.
+Reported from real use: "my claude 5hrs limit is 100 percent ... but you are
+again resetting it to 1 percent".
+
 ## 0.5.1 — 2026-09-09
 
 ### Fixed: the menu bar app was invisible

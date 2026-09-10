@@ -74,6 +74,50 @@ def _token(conf: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _pct(raw, scale_is_fraction: bool) -> Optional[float]:
+    """Convert a utilization reading to a percentage.
+
+    The scale must be decided for the WHOLE response, never per value. The
+    original code guessed per value with `u * 100 if u <= 1.0 else u`, which
+    is correct right up until a window goes PAST its limit: Anthropic then
+    reports 1.02, 1.05, 1.2 — still fractions — and the guess mistook them for
+    percentages, so a fully exhausted 5-hour window displayed as "1%".
+
+    That is the most dangerous direction an error can take here: it says you
+    have your whole allowance left at the exact moment you have none.
+
+    Percentages are clamped to 100. You cannot use more than all of a window,
+    and "102%" invites the reader to wonder whether the tool is broken; the
+    raw value is kept in `extra` for anyone who wants it.
+    """
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if scale_is_fraction:
+        v *= 100.0
+    return round(min(max(v, 0.0), 100.0), 1)
+
+
+def _fraction_scale(values) -> bool:
+    """Decide whether a set of utilization readings is 0-1 or 0-100.
+
+    Judged across every window in one response, so a single over-limit window
+    can no longer flip the interpretation for itself. Anything above 1.5 can
+    only be a percentage (a fraction that high would mean 150% of a window,
+    which the API does not report); otherwise treat the response as fractions.
+    """
+    nums = []
+    for v in values:
+        try:
+            nums.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    if not nums:
+        return True
+    return max(nums) <= 1.5
+
+
 @register
 class ClaudeAdapter(Adapter):
     name = "claude"
@@ -176,17 +220,27 @@ class ClaudeAdapter(Adapter):
                   "seven_day_sonnet": "Weekly (Sonnet)",
                   "seven_day_oauth_apps": "Weekly (apps)",
                   "seven_day_cowork": "Weekly (Cowork)"}
+        # Decide the scale once, across every window in this response.
+        frac = _fraction_scale(
+            v.get("utilization") for v in d.values()
+            if isinstance(v, dict) and v.get("utilization") is not None)
         for k, lbl in labels.items():
             v = d.get(k)
             if isinstance(v, dict) and v.get("utilization") is not None:
-                try:
-                    u = float(v["utilization"])
-                except (TypeError, ValueError):
+                pct = _pct(v["utilization"], frac)
+                if pct is None:
                     continue
                 raw_reset = v.get("resets_at")
+                # Keep the unclamped reading for anyone who wants to know a
+                # window went past its limit rather than merely reached it.
+                try:
+                    rawv = float(v["utilization"]) * (100.0 if frac else 1.0)
+                    if rawv > 100.0:
+                        r.extra.setdefault("over_limit", {})[k] = round(rawv, 1)
+                except (TypeError, ValueError):
+                    pass
                 r.windows.append(Window(
-                    key=k, label=lbl,
-                    used_pct=round(u * 100 if u <= 1.0 else u, 1),
+                    key=k, label=lbl, used_pct=pct,
                     resets_at=(fmt_reset(raw_reset) or raw_reset or "")
                     if raw_reset else ""))
         ex = d.get("extra_usage")
@@ -221,18 +275,27 @@ class ClaudeAdapter(Adapter):
                        "(token may be an API key, not a subscription OAuth token)")
             return r
 
-        for tag, lbl in (("5h", "5-hour session"), ("7d", "Weekly (all)"),
-                         ("7d_oi", "Weekly (Opus)")):
+        tags = (("5h", "5-hour session"), ("7d", "Weekly (all)"),
+                ("7d_oi", "Weekly (Opus)"))
+        # Same rule as the usage endpoint: one scale for the whole response.
+        frac = _fraction_scale(
+            hdrs.get(f"anthropic-ratelimit-unified-{t}-utilization")
+            for t, _ in tags)
+        for tag, lbl in tags:
             u = hdrs.get(f"anthropic-ratelimit-unified-{tag}-utilization")
             if u is None:
                 continue
-            try:
-                val = float(u)
-            except ValueError:
+            pct = _pct(u, frac)
+            if pct is None:
                 continue
+            try:
+                rawv = float(u) * (100.0 if frac else 1.0)
+                if rawv > 100.0:
+                    r.extra.setdefault("over_limit", {})[tag] = round(rawv, 1)
+            except (TypeError, ValueError):
+                pass
             r.windows.append(Window(
-                key=tag, label=lbl,
-                used_pct=round(val * 100 if val <= 1.0 else val, 1),
+                key=tag, label=lbl, used_pct=pct,
                 resets_at=fmt_reset(hdrs.get(f"anthropic-ratelimit-unified-{tag}-reset")),
                 status=hdrs.get(f"anthropic-ratelimit-unified-{tag}-status")))
 

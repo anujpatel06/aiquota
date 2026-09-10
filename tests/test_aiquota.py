@@ -1851,6 +1851,92 @@ class TestGovernanceDocs(Base):
             self.assertIn(name, txt)
 
 
+class TestClaudeOverLimit(Base):
+    """A window past its limit must not read as a window barely touched.
+
+    Anthropic reports utilization as a 0-1 fraction, and keeps going past 1.0
+    once a window is exhausted (1.02, 1.05, 1.2). The old per-value guess
+    `u * 100 if u <= 1.0 else u` read 1.02 as "1%" — claiming a full allowance
+    at the exact moment there was none. Reported from real use: "my claude
+    5hrs limit is 100 percent ... but you are again resetting it to 1 percent".
+    """
+
+    def test_over_limit_fractions_are_not_read_as_percentages(self):
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        for raw, expected in ((1.02, 100.0), (1.05, 100.0),
+                              (1.2, 100.0), (1.5, 100.0)):
+            frac = _fraction_scale([raw])
+            self.assertEqual(_pct(raw, frac), expected,
+                             f"{raw} must not read as {raw}%")
+
+    def test_normal_fractions_still_scale(self):
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        vals = [0.05, 0.34, 0.99]
+        frac = _fraction_scale(vals)
+        self.assertEqual([_pct(v, frac) for v in vals], [5.0, 34.0, 99.0])
+
+    def test_percent_scale_responses_are_left_alone(self):
+        """If Anthropic ever switches to 0-100, don't multiply again."""
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        vals = [5.0, 34.0, 99.0]
+        frac = _fraction_scale(vals)
+        self.assertFalse(frac)
+        self.assertEqual([_pct(v, frac) for v in vals], [5.0, 34.0, 99.0])
+
+    def test_scale_decided_across_all_windows_not_per_value(self):
+        """One exhausted window must not flip its own interpretation."""
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        vals = [0.05, 1.02]          # 5-hour fine, weekly over
+        frac = _fraction_scale(vals)
+        self.assertTrue(frac)
+        self.assertEqual(_pct(vals[0], frac), 5.0)
+        self.assertEqual(_pct(vals[1], frac), 100.0)
+
+    def test_headers_route_reports_exhausted_window_as_full(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        ad = registry()["claude"]
+        hdrs = {
+            "anthropic-ratelimit-unified-5h-utilization": "1.02",
+            "anthropic-ratelimit-unified-5h-reset": "1789033200",
+            "anthropic-ratelimit-unified-5h-status": "rejected",
+            "anthropic-ratelimit-unified-7d-utilization": "0.34",
+        }
+        with mock.patch("aiquota.adapters.claude.request",
+                        return_value=(200, hdrs, b"")):
+            r = ad._via_headers({"_key": "claude"}, "tok")
+        by = {w.key: w.used_pct for w in r.windows}
+        self.assertEqual(by["5h"], 100.0, "exhausted window showed as 1%")
+        self.assertEqual(by["7d"], 34.0)
+        self.assertEqual(r.extra["over_limit"]["5h"], 102.0)
+
+    def test_usage_route_reports_exhausted_window_as_full(self):
+        from aiquota.core import load_adapters, registry
+        load_adapters()
+        ad = registry()["claude"]
+        body = {"five_hour": {"utilization": 1.05, "resets_at": None},
+                "seven_day": {"utilization": 0.27, "resets_at": None}}
+        with mock.patch("aiquota.adapters.claude.get_json",
+                        return_value=(200, body)):
+            r = ad._via_oauth_usage({"_key": "claude"}, "tok")
+        by = {w.key: w.used_pct for w in r.windows}
+        self.assertEqual(by["five_hour"], 100.0)
+        self.assertEqual(by["seven_day"], 27.0)
+
+    def test_percentage_never_exceeds_100(self):
+        """'102%' reads as a broken tool; the raw value lives in extra."""
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        got = _pct(3.0, _fraction_scale([3.0]))
+        self.assertIsNotNone(got)
+        self.assertLessEqual(float(got or 0), 100.0)
+
+    def test_garbage_values_are_skipped_not_guessed(self):
+        from aiquota.adapters.claude import _fraction_scale, _pct
+        self.assertIsNone(_pct("not-a-number", True))
+        self.assertIsNone(_pct(None, True))
+        self.assertTrue(_fraction_scale(["x", None]))
+
+
 class TestHTML(Base):
     def test_html_escapes_and_writes(self):
         from aiquota.render import render_html
