@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.3 — 2026-09-10
+
+### The menu bar app now uses the desktop widget's design
+The first cut was generic SwiftUI — stock progress bars, orange/red tinting,
+a plain list. The widget's design is better and it is the one that ships, so
+the app now follows it rather than inventing a second look.
+
+Ported directly from the widget's stylesheet: 340pt card, blue ◐ header glyph
+with timestamp, 18pt rounded logo tiles with the status dot straddling the
+corner, capsule meters at 6pt, hairline separators, pill buttons with the blue
+primary action.
+
+Including the rule that matters most: **meters stay white until a window
+passes 85%**, then turn red. A wall of colour reads as decoration and stops
+meaning anything, so colour is spent only on the one case worth interrupting
+someone for.
+
+Rows show the real platform logos the CLI already carries (`--logos`), not
+letter monograms.
+
+### Fixed while porting
+- A balance appeared twice on prepaid providers — once as cost, once as note
+- The status dot floated in the margin instead of sitting on its tile
+
+### Added
+`AIQuotaBar --render-preview <path>` exports the panel as a PNG. Verifying a
+menu bar UI by driving synthetic clicks proved unreliable — coordinates shift
+and other windows steal the click — and "it compiled" is not evidence that it
+looks right.
+
 ## 0.5.2 — 2026-09-10
 
 ### Fixed: an exhausted Claude window displayed as 1%

@@ -58,7 +58,11 @@ There's also a **native menu bar app** that needs no SwiftBar or Übersicht:
 bash scripts/build_app.sh && open dist/AIQuotaBar.app
 ```
 
-It shells out to the same CLI, so the honesty rules hold in one place.
+![Menu bar panel](docs/img/menubar-panel.png)
+
+It shares the desktop widget's design — same meters, same colour rule (white
+until a window passes 85%), same platform logos — and shells out to the same
+CLI, so the honesty rules live in one place rather than two.
 
 Or from PyPI: `uv tool install aiquota` / `pipx install aiquota` /
 `pip install aiquota`.

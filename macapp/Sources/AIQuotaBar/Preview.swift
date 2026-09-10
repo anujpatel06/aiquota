@@ -5,6 +5,22 @@
 import AppKit
 import SwiftUI
 
+/// Real logos, read from the package's assets so the preview exercises the
+/// same image path the app uses rather than falling back to monograms.
+private let L: [String: String] = {
+    let candidates = [
+        FileManager.default.currentDirectoryPath + "/../aiquota/assets/logos.json",
+        NSHomeDirectory() + "/projects/aiquota/aiquota/assets/logos.json",
+    ]
+    for p in candidates {
+        if let d = FileManager.default.contents(atPath: p),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+            return o
+        }
+    }
+    return [:]
+}()
+
 @MainActor
 func renderPanel(to path: String) {
     let model = Model()
@@ -18,7 +34,7 @@ func renderPanel(to path: String) {
                            usedPct: 27, resetsAt: "resets Mon 00:30"),
                 ],
                 note: "", error: nil, cost: nil,
-                confidence: "percent_only", failureHint: nil, logo: nil),
+                confidence: "percent_only", failureHint: nil, logo: L["claude"]),
         Service(name: "chatgpt", service: "ChatGPT", plan: "Plus",
                 tier: "live",
                 windows: [
@@ -28,18 +44,18 @@ func renderPanel(to path: String) {
                            resetsAt: "resets Fri"),
                 ],
                 note: "", error: nil, cost: nil,
-                confidence: "percent_only", failureHint: nil, logo: nil),
+                confidence: "percent_only", failureHint: nil, logo: L["chatgpt"]),
         Service(name: "deepseek", service: "DeepSeek", plan: "",
                 tier: "live", windows: [],
                 note: "$12.34 left", error: nil,
                 cost: Cost(human: "$12.34 left"),
-                confidence: "exact", failureHint: nil, logo: nil),
+                confidence: "exact", failureHint: nil, logo: L["deepseek"]),
         Service(name: "cursor", service: "Cursor", plan: "",
                 tier: "error", windows: [],
                 note: "", error: "Cursor rejected the credential",
                 cost: nil, confidence: "unknown",
                 failureHint: "The key or session expired — sign in again.",
-                logo: nil),
+                logo: L["cursor"]),
     ]
 
     let view = MenuView(model: model)

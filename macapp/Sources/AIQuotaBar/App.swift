@@ -322,6 +322,9 @@ struct RowView: View {
                                 .foregroundStyle(D.primary.opacity(0.6))
                         }
                     }
+                    // Status dot at the tile's bottom-left, half on and half
+                    // off the artwork — the widget's placement. Sitting fully
+                    // inside covered the logo it is meant to annotate.
                     .overlay(alignment: .bottomLeading) {
                         Circle()
                             .fill(D.dot(s.tier))
@@ -329,10 +332,10 @@ struct RowView: View {
                             .overlay(Circle()
                                 .stroke(Color(nsColor: .windowBackgroundColor),
                                         lineWidth: 1.5))
-                            // Inside the tile's corner. Hanging it outside
-                            // reads as a stray speck once the ring blends
-                            // into a light background.
-                            .offset(x: 1, y: -1)
+                            // Straddles the tile edge: enough overlap to read as
+                            // attached to the icon, enough clearance to leave
+                            // the artwork legible.
+                            .offset(x: -1, y: 1)
                     }
                 Text(s.service)
                     .font(.system(size: 13, weight: .semibold))
